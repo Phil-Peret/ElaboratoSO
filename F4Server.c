@@ -16,12 +16,14 @@
 void check_args(int, char**, int[]);
 void print_guide();
 void clean_map(char*, int length, int width);
+void pprint();
 
 struct shmseg{
     int pid[2];
 };
 
 int main(int argc, char **argv){
+    pprint();
 
     int dim_map[2];
     check_args(argc, argv, dim_map);
@@ -37,6 +39,9 @@ int main(int argc, char **argv){
             printf("Cartella corrente: %s\n",cwd);
     }
 
+    pprint();
+
+
     int sem = semget(ftok(cwd,0), 2, IPC_CREAT | 0666); //da cambiare?
     int shm_id_map = shmget(ftok(cwd,1),sizeof(map),IPC_CREAT | 0666);
     int shm_id_server = shmget(ftok(cwd,2), sizeof(struct shmseg), IPC_CREAT | 0666);
@@ -44,6 +49,8 @@ int main(int argc, char **argv){
         perror("Shared Memory error!");
         exit(0);
     }
+
+    pprint();
 
     if (shm_id_server==-1){
         perror("Shared Memory error!");
@@ -56,6 +63,7 @@ int main(int argc, char **argv){
         exit(0);
     }
 
+
     clean_map(shm_map, dim_map[0], dim_map[1]);
 
     char *fifo_player1="Player1";
@@ -65,6 +73,8 @@ int main(int argc, char **argv){
         perror("Error make fifo");
         exit(0);
     }
+
+
 
     if(mkfifo(fifo_player2,0666)==-1){
         perror("Error make fifo");
@@ -136,6 +146,10 @@ void check_args(int argc, char **argv, int dim[]){
         print_guide();
         exit(0); //TODO Gestione degli errori
     }
+}
+
+void pprint(){
+    printf("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢴⣶⣶⣿⣿⣿⣆\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡀⣀⣠⣴⣾⣮⣝⠿⠿⠿⣻⡟\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣶⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠁⠉⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠟⠉⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⣿⣿⣿⣿⣿⣿⣿⣛⣛⣻⠉⠁⠀⠀⠀⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢿⣿⣿⣿⣿⣿⡿⣿⣿⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠻⠿⠟⠋⠑⠛⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀");
 }
 
 void print_guide(){
