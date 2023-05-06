@@ -10,6 +10,5 @@ client: $(client_file)
 
 server: $(server_file)
 	gcc $(server_file) -o $(server_exe)
-
-clean:
-	rm Player1 Player2
+#run:
+#	./$(server_exe) 5 5 X O & ./$(client_exe) &./$(client_exe)
