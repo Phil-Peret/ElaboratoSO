@@ -10,110 +10,132 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <sys/sem.h>
+#include <sys/msg.h>
 
 #define PATH_MAX 4096
 
 void check_args(int, char**, int[]);
 void print_guide();
 void clean_map(char*, int length, int width);
+void shm_remove(int);
+void sem_remove(int);
+void msg_queue_remove(int);
+int message_in_queue(int);
 void pprint();
 
-struct shmseg{
-    int pid[2];
+
+struct msg_registration{
+    long int msg_type;
+    pid_t pid;
+};
+
+struct info_message{
+    char pid_server[10];
+    char height[3];
+    char width[3];
+    char pid_sem[10];
 };
 
 int main(int argc, char **argv){
-    pprint();
 
     int dim_map[2];
     check_args(argc, argv, dim_map);
     char symbols[]={argv[3][0],argv[4][0]};
-    printf("Lunghezza: %d, Larghezza: %d \n",dim_map[0], dim_map[1]);
+    printf("width: %d, height: %d \n",dim_map[0], dim_map[1]);
     printf("Symbol Player 1: %c\nSymbol Player 2: %c\n",symbols[0],symbols[1]);
     char  map[dim_map[0]*dim_map[1]];
     printf("Size of map: %lu\n",sizeof(map));
 
-    //path corrente
+    //working directory per ftok...
+
     char cwd[PATH_MAX];
     if(getcwd(cwd, sizeof(cwd)) != NULL){
             printf("Cartella corrente: %s\n",cwd);
     }
+    else{
+	exit(0);
+    }
 
-    pprint();
+    union semun {
+	int val;
+	struct semid_ds *buf;
+	unsigned short  *array;
+    } arg_sem;
 
 
-    int sem = semget(ftok(cwd,0), 2, IPC_CREAT | 0666); //da cambiare?
-    int shm_id_map = shmget(ftok(cwd,1),sizeof(map),IPC_CREAT | 0666);
-    int shm_id_server = shmget(ftok(cwd,2), sizeof(struct shmseg), IPC_CREAT | 0666);
-    if (shm_id_map==-1){
-        perror("Shared Memory error!");
+    key_t key_shm_map = ftok(cwd,1);
+    key_t key_msg = ftok(cwd,2);
+    key_t key_sem_player1 = ftok (cwd, 3);
+    key_t key_sem_player2 = ftok (cwd, 4);
+    key_t key_sem_players = ftok(cwd,5);
+
+    int sem_id_player1 = semget(key_sem_player1, 1, IPC_CREAT | 0666); //semaforo per player1
+    int sem_id_player2 = semget(key_sem_player2, 1, IPC_CREAT | 0666); //semaforo per player2
+    int sem_id_players = semget(key_sem_players, 2, IPC_CREAT | 0666); //semaforo per la gestione di accesso alla partita
+    int shm_id_map = shmget(key_shm_map,sizeof(map),IPC_CREAT | 0666); //shared memory il campo di gioco
+    int msg_id = msgget(key_msg, IPC_CREAT | 0666); //message queue
+
+    if (shm_id_map==-1 || msg_id==-1 || sem_id_player1==-1 || sem_id_player2==-1 || sem_id_players==-1){
+        perror("Error initialize IPC!");
         exit(0);
     }
 
-    pprint();
+    unsigned short value[]={2,2};
+    arg_sem.array=value;
 
-    if (shm_id_server==-1){
-        perror("Shared Memory error!");
-        exit(0);
+    //inizializzazione semafori per l'acesso'
+    if(semctl(sem_id_players,2,SETALL,arg_sem)){
+	perror("Semctl error, in SETVAL");
+	exit(0);
     }
-    //Attach della memoria condivisa
+
+    //Server in attesa che i client si iscrivino alla partita
+    printf("Waiting Players...\n");
+    struct sembuf sops={1,0,0}; //attende finchè il semaforo non ha valore 0
+
+    if(semop(sem_id_players, &sops, 1)==-1){
+	perror("Error semop");
+	exit(0);
+    }
+    printf("Players ready!\n");
+
+    struct msg_registration msg_recive;
+    while(message_in_queue(msg_id)!=0){
+	if(msgrcv(msg_id, &msg_recive, sizeof(msg_recive), 0, 0)==-1){
+	    perror("Error read message in a queue");
+	}
+	printf("Pid: %i\n",(int)(msg_recive.pid));
+
+    }
+
+
+    //Attach della memorie condivise
     char *shm_map=shmat(shm_id_map, NULL, 0666);
     if (shm_map == (void *) -1){
         perror("Shared memory attach!");
         exit(0);
     }
 
+    clean_map(shm_map, dim_map[0], dim_map[1]);//Set /space in ogni posizione
 
-    clean_map(shm_map, dim_map[0], dim_map[1]);
-
-    char *fifo_player1="Player1";
-    char *fifo_player2="Player2";
-
-    if(mkfifo(fifo_player1,0666)==-1){
-        perror("Error make fifo");
-        exit(0);
-    }
-
-
-
-    if(mkfifo(fifo_player2,0666)==-1){
-        perror("Error make fifo");
-        exit(0);
-    }
-    //In attesa dei Client
-    int child_A=fork();
-    if(child_A==0){
-        int fd = open(fifo_player1, O_RDONLY);
-	close(fd);
-    }
-    else{
-        int child_B=fork();
-        if(child_B==0){
-            int fd = open(fifo_player2, O_RDONLY);
-	    close(fd);
-        }
-    }
-    pid_t wpid;
-    int status=0;
-    while ((wpid=wait(&status)) > 0);//I giocatori sono pronti alla partita
-    //selezionare il primo giocatore, tramite semafori!
-
-    int fd_fifo1=open(fifo_player1, O_RDONLY);
-    char pid_player1[8];
-    read(fd_fifo1, pid_player1, 8);
-    printf("Player 1 pid: %s\n", pid_player1);
-    close(fd_fifo1);
-
-    int fd_fifo2=open(fifo_player2, O_RDONLY);
-    char pid_player2[8];
-    read(fd_fifo2, pid_player2, 8);
-    printf("Player 2 pid: %s\n",pid_player2);
-    close(fd_fifo2);
-
-
+    shm_remove(shm_id_map);
+    sem_remove(sem_id_player1);
+    sem_remove(sem_id_player2);
+    sem_remove(sem_id_players);
+    msg_queue_remove(msg_id);
+    //Invio informazioni ai client
 
 
     return 0;
+}
+
+int message_in_queue(int msqid){
+    struct msqid_ds msq_info;
+    if(msgctl(msqid, IPC_STAT, &msq_info)==-1){
+	perror("Error get info by msq");
+	exit(0);
+    }
+    return msq_info.msg_qnum;
 }
 
 void clean_map(char *campo, int length, int width){ //pulizia campo
@@ -148,8 +170,28 @@ void check_args(int argc, char **argv, int dim[]){
     }
 }
 
+void shm_remove(int shm_id){
+    if(shmctl(shm_id,IPC_RMID,NULL) == -1){
+	perror("Error detach shm\n");
+	exit(0);
+    }
+}
+
+void sem_remove(int sem_id){
+    if(semctl(sem_id,0,IPC_RMID) == -1){
+	perror("Error remove sem\n");
+    }
+}
+
+void msg_queue_remove(int msg_id){
+    if(msgctl(msg_id,IPC_RMID,NULL)){
+	perror("Error remove msgqueue");
+	exit(0);
+    }
+}
+
 void pprint(){
-    printf("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢴⣶⣶⣿⣿⣿⣆\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡀⣀⣠⣴⣾⣮⣝⠿⠿⠿⣻⡟\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣶⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠁⠉⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠟⠉⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⣿⣿⣿⣿⣿⣿⣿⣛⣛⣻⠉⠁⠀⠀⠀⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢿⣿⣿⣿⣿⣿⡿⣿⣿⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠻⠿⠟⠋⠑⠛⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀");
+    printf("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢴⣶⣶⣿⣿⣿⣆\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡀⣀⣠⣴⣾⣮⣝⠿⠿⠿⣻⡟\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣶⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠁⠉⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠟⠉⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⣿⣿⣿⣿⣿⣿⣿⣛⣛⣻⠉⠁⠀⠀⠀⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢿⣿⣿⣿⣿⣿⡿⣿⣿⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠻⠿⠟⠋⠑⠛⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n");
 }
 
 void print_guide(){
