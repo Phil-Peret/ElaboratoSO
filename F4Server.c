@@ -27,7 +27,7 @@ void pprint();
 struct info_game{
     int width;
     int height;
-    key_t semaphore;
+    int semaphore;
     pid_t pid_server;
 };
 
@@ -127,13 +127,14 @@ int main(int argc, char **argv){
 
     //risposta del server ai client su msgqueue
     struct msg_info_game msg_send;
-    msg_send.info.semaphore=key_sem_player1;
     msg_send.info.pid_server=getpid();
     msg_send.info.width = dim_map[0];
     msg_send.info.height = dim_map[1];
 
 
     for(int i=0;i<PLAYERS; i++){//risposta per ogni client
+	msg_send.info.semaphore=(int)(sem_id_player[i]);
+	msg_send.msg_type=(long int)(players[i]);
 	if(msgsnd(msg_id, &msg_send, sizeof(struct info_game), 0)==-1){
 	    perror("Error send message on Server");
 	exit(0);

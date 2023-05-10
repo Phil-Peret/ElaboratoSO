@@ -10,6 +10,19 @@
 #include <string.h>
 #define PATH_MAX 4096
 
+struct info_game{
+    int width;
+    int height;
+    int semaphore;
+    pid_t pid_server;
+};
+
+struct msg_info_game{
+    long int msg_type;
+    struct info_game info;
+
+};
+
 struct message_registration{
     long int msg_type;
     pid_t pid;
@@ -69,6 +82,12 @@ int main(){
     }
 
     //lettura dei messaggi in queue
+    struct msg_info_game info_recive;
+    if(msgrcv(msg_id, &info_recive, sizeof(info_recive),(long int)(getpid()), 0)==-1){
+	    perror("Error read message in a queue");
+    }
+
+    printf("My semaphore id is: %i\n",info_recive.info.semaphore);
     return 0;
 
 }
