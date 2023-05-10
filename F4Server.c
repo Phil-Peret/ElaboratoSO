@@ -13,6 +13,7 @@
 #include <sys/msg.h>
 
 #define PATH_MAX 4096
+#define PLAYERS 2
 
 void check_args(int, char**, int[]);
 void print_guide();
@@ -23,6 +24,18 @@ void msg_queue_remove(int);
 int message_in_queue(int);
 void pprint();
 
+struct info_game{
+    int width;
+    int height;
+    key_t semaphore;
+    pid_t pid_server;
+};
+
+struct msg_info_game{
+    long int msg_type;
+    struct info_game info;
+
+};
 
 struct msg_registration{
     long int msg_type;
@@ -69,22 +82,23 @@ int main(int argc, char **argv){
     key_t key_sem_player2 = ftok (cwd, 4);
     key_t key_sem_players = ftok(cwd,5);
 
-    int sem_id_player1 = semget(key_sem_player1, 1, IPC_CREAT | 0666); //semaforo per player1
-    int sem_id_player2 = semget(key_sem_player2, 1, IPC_CREAT | 0666); //semaforo per player2
-    int sem_id_players = semget(key_sem_players, 2, IPC_CREAT | 0666); //semaforo per la gestione di accesso alla partita
+    int sem_id_player[]={semget(key_sem_player1, 1, IPC_CREAT | 0666), semget(key_sem_player2, 1, IPC_CREAT | 0666)};//semafori per singolo giocatore
+    int sem_id_access = semget(key_sem_players, 3, IPC_CREAT | 0666); //semaforo per la gestione di accesso alla partita e scambio di messaggi
+
     int shm_id_map = shmget(key_shm_map,sizeof(map),IPC_CREAT | 0666); //shared memory il campo di gioco
     int msg_id = msgget(key_msg, IPC_CREAT | 0666); //message queue
 
-    if (shm_id_map==-1 || msg_id==-1 || sem_id_player1==-1 || sem_id_player2==-1 || sem_id_players==-1){
+    if (shm_id_map==-1 || msg_id==-1 || sem_id_player[0]==-1 || sem_id_player[1]==-1 || sem_id_access==-1){
         perror("Error initialize IPC!");
         exit(0);
     }
 
-    unsigned short value[]={2,2};
+
+    unsigned short value[]={2,2,1};
     arg_sem.array=value;
 
     //inizializzazione semafori per l'acesso'
-    if(semctl(sem_id_players,2,SETALL,arg_sem)){
+    if(semctl(sem_id_access,3,SETALL,arg_sem)){
 	perror("Semctl error, in SETVAL");
 	exit(0);
     }
@@ -93,19 +107,37 @@ int main(int argc, char **argv){
     printf("Waiting Players...\n");
     struct sembuf sops={1,0,0}; //attende finchè il semaforo non ha valore 0
 
-    if(semop(sem_id_players, &sops, 1)==-1){
+    if(semop(sem_id_access, &sops, 1)==-1){
 	perror("Error semop");
 	exit(0);
     }
     printf("Players ready!\n");
 
     struct msg_registration msg_recive;
-    while(message_in_queue(msg_id)!=0){
+    pid_t players[PLAYERS];
+    //lettura del messaggio da parte dei client su msgqueue
+    for (int i=0;message_in_queue(msg_id)!=0; i++){
 	if(msgrcv(msg_id, &msg_recive, sizeof(msg_recive), 0, 0)==-1){
 	    perror("Error read message in a queue");
 	}
 	printf("Pid: %i\n",(int)(msg_recive.pid));
+	players[i]=msg_recive.pid;
+    }
 
+
+    //risposta del server ai client su msgqueue
+    struct msg_info_game msg_send;
+    msg_send.info.semaphore=key_sem_player1;
+    msg_send.info.pid_server=getpid();
+    msg_send.info.width = dim_map[0];
+    msg_send.info.height = dim_map[1];
+
+
+    for(int i=0;i<PLAYERS; i++){//risposta per ogni client
+	if(msgsnd(msg_id, &msg_send, sizeof(struct info_game), 0)==-1){
+	    perror("Error send message on Server");
+	exit(0);
+	}
     }
 
 
@@ -118,10 +150,20 @@ int main(int argc, char **argv){
 
     clean_map(shm_map, dim_map[0], dim_map[1]);//Set /space in ogni posizione
 
+    //set semaphore operation
+    sops.sem_flg=0;
+    sops.sem_op=-1;
+    sops.sem_num=2;
+
+    if(semop(sem_id_access, &sops,1)==-1){//sblocco i client per la lettura dei messagi
+	perror("Error server semop");
+    }
+
+    sleep(5);
     shm_remove(shm_id_map);
-    sem_remove(sem_id_player1);
-    sem_remove(sem_id_player2);
-    sem_remove(sem_id_players);
+    sem_remove(sem_id_player[0]);
+    sem_remove(sem_id_player[1]);
+    sem_remove(sem_id_access);
     msg_queue_remove(msg_id);
     //Invio informazioni ai client
 

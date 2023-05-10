@@ -45,6 +45,7 @@ int main(){
     if((msg_id=msgget(ftok(cwd,2),0666)) == -1){
 	perror("Error call msgqueue");
     }
+
     //send pid to Server
     struct message_registration msg_reg;
     msg_reg.msg_type=1;
@@ -54,11 +55,20 @@ int main(){
 	exit(0);
     }
 
-    sops.sem_num=1;
+    sops.sem_num=1; //semnum set
     if(semop(sem_players, &sops,1)==-1){
 	perror("Semaphore error");
 	exit(0);
     }
+
+    sops.sem_num=2;
+    sops.sem_op=0;
+    //in attesa del proprio turano alla partita
+    if (semop(sem_players, &sops,1)==-1){
+	perror("Error semaphore");
+    }
+
+    //lettura dei messaggi in queue
     return 0;
 
 }
