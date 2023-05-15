@@ -152,21 +152,33 @@ int main(int argc, char **argv){
     sops.sem_op=-1;
     sops.sem_num=2;
 
-    if(semop(sem_id_access, &sops,1)==-1){//sblocco i client per la lettura dei messagi
+    if(semop(sem_id_access, &sops,1)==-1){//sblocco i client per la lettura dei messaggi
 		perror("Error server semop");
     }
 
-    sleep(1);
+	while (0){
+		//Il truno inizia dal primo giocatore iscritto alla partita!
+		sops.sem_op=1;
+		sops.sem_num=0;
+		if(semop(sem_id_player[0],&sops,1)==-1){
+			perror("Error semaphore ops!");
+			printf("File: %s, Line %i\n", __FILE__, __LINE__);
+		}
+		sops.sem_op=0;
+		sops.sem_num=0;
+		if(semop(sem_id_player[0],&sops, 1)==-1){
+			perror("Error semaphore ops!");
+			printf("File: %s, Line %i\n", __FILE__, __LINE__);
+		}
+		//Inizio turno giocatore 2
+		if(semop(sem_id_player[1], &sops,1)){
+			perror("Error semaphore ops!");
+			printf("File: %s Line %i\n", __FILE__,__LINE__);
+		}
 
-    //Il truno inizia dal primo giocatore iscritto alla partita!
-    sops.sem_op=1;
-    sops.sem_num=0;
-    if(semop(sem_id_player[0],&sops,1)==-1){
-		perror("Error semaphore ops!");
-    }
-
-    sleep(1);
-    //cancellazione delle IPC create
+		sleep(5);
+		//cancellazione delle IPC create
+	}
     shm_remove(shm_id_map);
     sem_remove(sem_id_player[0]);
     sem_remove(sem_id_player[1]);
@@ -214,6 +226,7 @@ void check_args(int argc, char **argv, int dim[]){
         print_guide();
         exit(0); //TODO Gestione degli errori
     }
+
 }
 
 void shm_remove(int shm_id){
@@ -243,7 +256,6 @@ void pprint(){
 void print_guide(){
     printf("./F4Server [map_length] [map_width] [symbol_player1] [symbiol_player2]\nesempio:\n./F4Server 5 5 X O\n");
 }
-
 
 
 

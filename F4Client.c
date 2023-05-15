@@ -12,6 +12,7 @@
 #define PATH_MAX 4096
 
 void print_map(char[],int,int);
+int check_choose(int, char[], int);
 
 struct info_game{
     int n_player;
@@ -109,7 +110,6 @@ int main(){
     if(semop(sem_turn,&sops,1)==-1){
 		perror("Error sem ops!");
     }
-
     //carico la memoria condivisa
     char *shm_map=shmat(shm_id, NULL, 0666);
     if (shm_map == (void *) -1){
@@ -117,10 +117,21 @@ int main(){
         exit(0);
     }
     print_map(shm_map,dim_map[0],dim_map[1]);
+	int choose;
     printf("Choose position:");
+	int valid=0;
+	do {
+		scanf("%i", &choose);
+		if((valid=check_choose(choose,shm_map,dim_map[0]))){
+			printf("Choose not valid, try again..\nChoose position: ");
+		}
+	}while(valid);
+
+
 
 
     return 0;
+
 
 }
 
@@ -134,3 +145,10 @@ void print_map(char map[],int width,int height){
     }
 }
 
+
+int check_choose(int choose, char map[], int width){
+	if (map[choose]==' ' && choose>=0 && choose<width){
+		return 0;
+	}
+	return 1;
+}
