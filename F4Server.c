@@ -25,9 +25,11 @@ int message_in_queue(int);
 void pprint();
 
 struct info_game{
+    int n_player;
     int width;
     int height;
     int semaphore;
+    int shared_memory;
     pid_t pid_server;
 };
 
@@ -42,15 +44,8 @@ struct msg_registration{
     pid_t pid;
 };
 
-struct info_message{
-    char pid_server[10];
-    char height[3];
-    char width[3];
-    char pid_sem[10];
-};
 
 int main(int argc, char **argv){
-
     int dim_map[2];
     check_args(argc, argv, dim_map);
     char symbols[]={argv[3][0],argv[4][0]};
@@ -66,7 +61,7 @@ int main(int argc, char **argv){
             printf("Cartella corrente: %s\n",cwd);
     }
     else{
-	exit(0);
+		exit(0);
     }
 
     union semun {
@@ -98,9 +93,9 @@ int main(int argc, char **argv){
     arg_sem.array=value;
 
     //inizializzazione semafori per l'acesso'
-    if(semctl(sem_id_access,3,SETALL,arg_sem)){
-	perror("Semctl error, in SETVAL");
-	exit(0);
+    if(semctl(sem_id_access,3,SETALL,arg_sem)){//semnum è ignorato
+		perror("Semctl error, in SETVAL");
+		exit(0);
     }
 
     //Server in attesa che i client si iscrivino alla partita
@@ -108,8 +103,8 @@ int main(int argc, char **argv){
     struct sembuf sops={1,0,0}; //attende finchè il semaforo non ha valore 0
 
     if(semop(sem_id_access, &sops, 1)==-1){
-	perror("Error semop");
-	exit(0);
+		perror("Error semop");
+		exit(0);
     }
     printf("Players ready!\n");
 
@@ -130,10 +125,11 @@ int main(int argc, char **argv){
     msg_send.info.pid_server=getpid();
     msg_send.info.width = dim_map[0];
     msg_send.info.height = dim_map[1];
-
+    msg_send.info.shared_memory = shm_id_map;
 
     for(int i=0;i<PLAYERS; i++){//risposta per ogni client
 	msg_send.info.semaphore=(int)(sem_id_player[i]);
+	msg_send.info.n_player=(i+1);
 	msg_send.msg_type=(long int)(players[i]);
 	if(msgsnd(msg_id, &msg_send, sizeof(struct info_game), 0)==-1){
 	    perror("Error send message on Server");
@@ -157,18 +153,25 @@ int main(int argc, char **argv){
     sops.sem_num=2;
 
     if(semop(sem_id_access, &sops,1)==-1){//sblocco i client per la lettura dei messagi
-	perror("Error server semop");
+		perror("Error server semop");
     }
 
-    sleep(5);
+    sleep(1);
+
+    //Il truno inizia dal primo giocatore iscritto alla partita!
+    sops.sem_op=1;
+    sops.sem_num=0;
+    if(semop(sem_id_player[0],&sops,1)==-1){
+		perror("Error semaphore ops!");
+    }
+
+    sleep(1);
+    //cancellazione delle IPC create
     shm_remove(shm_id_map);
     sem_remove(sem_id_player[0]);
     sem_remove(sem_id_player[1]);
     sem_remove(sem_id_access);
     msg_queue_remove(msg_id);
-    //Invio informazioni ai client
-
-
     return 0;
 }
 
