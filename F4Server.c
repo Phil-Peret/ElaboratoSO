@@ -28,6 +28,7 @@ void pprint();
 void print_map(char*, int, int);
 char get_value_by_position(char*, int, int, int, int);
 int check_winner(char*, int, int, char*);
+int check_map_game(char*, int);
 
 struct info_game{
     int n_player;
@@ -36,7 +37,13 @@ struct info_game{
     int height;
     int semaphore;
     int shared_memory;
+	char name_vs[16]; //nome avversario
     pid_t pid_server;
+};
+
+struct player{
+	pid_t pid;
+	char name[16];
 };
 
 struct msg_info_game{
@@ -45,13 +52,60 @@ struct msg_info_game{
 
 };
 
-struct msg_registration{
-    long int msg_type;
-    pid_t pid;
+struct end_game{
+	int winner;
+	long int status;
+};
+
+struct msg_end_game{
+	long int msg_type;
+	struct end_game info;
 };
 
 
+struct registration{
+	pid_t pid;
+	char name[16];  //nome giocatore
+};
+
+struct msg_registration{
+    long int msg_type;
+	struct registration info;
+};
+
+//variabili globali
+
+int msg_id=0;
+struct player p[PLAYERS];
+
+
+void signal_client_exit(int sig){
+	printf("One player left the game\n");
+	struct msg_end_game msg;
+	if(msgrcv(msg_id, &msg, sizeof(struct msg_end_game), (long int)(getpid()), 0) == -1){
+		perror("Error get message in message queue\n");
+	}
+	printf("%ld \n",msg.info.status);
+	for (int i=0; i<PLAYERS; i++){
+		if (msg.info.status == (long int)(p[i].pid)){
+			printf("%s left the game!\n", p[i].name);
+			msg.msg_type = i == 0 ? (long int)(p[1].pid) : (long int)(p[0].pid);
+			msg.info.winner = 0;
+			msg.info.status = (long int)1;
+			if(msgsnd(msg_id, &msg, sizeof(struct msg_end_game), 0) == -1){
+				perror("Error send message");
+			}
+			kill(p[i].pid, SIGUSR1);
+		}
+	}
+	exit(0);
+
+}
+
 int main(int argc, char **argv){
+	if ((signal(SIGUSR2, signal_client_exit) == (void*)-1)){
+		perror("Error setting signal");
+	}
     int dim_map[2];
     check_args(argc, argv, dim_map);
     char symbols[]={argv[3][0],argv[4][0]};
@@ -71,9 +125,9 @@ int main(int argc, char **argv){
     }
 
     union semun {
-	int val;
-	struct semid_ds *buf;
-	unsigned short  *array;
+		int val;
+		struct semid_ds *buf;
+		unsigned short  *array;
     } arg_sem;
 
 
@@ -85,10 +139,8 @@ int main(int argc, char **argv){
 
     int sem_id_player[]={semget(key_sem_player1, 2, IPC_CREAT | 0666), semget(key_sem_player2, 2, IPC_CREAT | 0666)};//semafori per singolo giocatore
     int sem_id_access = semget(key_sem_players, 3, IPC_CREAT | 0666); //semaforo per la gestione di accesso alla partita e scambio di messaggi
-
     int shm_id_map = shmget(key_shm_map,sizeof(map),IPC_CREAT | 0666); //shared memory il campo di gioco
-    int msg_id = msgget(key_msg, IPC_CREAT | 0666); //message queue
-
+    msg_id = msgget(key_msg, IPC_CREAT | 0666); //message queue
     if (shm_id_map==-1 || msg_id==-1 || sem_id_player[0]==-1 || sem_id_player[1]==-1 || sem_id_access==-1){
         perror("Error initialize IPC!");
         exit(0);
@@ -107,23 +159,31 @@ int main(int argc, char **argv){
     //Server in attesa che i client si iscrivino alla partita
     printf("Waiting Players...\n");
     struct sembuf sops={1,0,0}; //attende finchè il semaforo non ha valore 0
+	int ret;
 
-    if(semop(sem_id_access, &sops, 1)==-1){
-		perror("Error semop");
+	//protezione semafori dalle interruzioni causate dai segnali
+	do{
+		ret = semop(sem_id_access,&sops,1);
+	}while(ret == -1 && errno == EINTR);
+	if (ret == -1 && errno != EINTR ){
+		perror("Error with semop Client turn");
 		exit(0);
-    }
+	}
     printf("Players ready!\n");
 
     struct msg_registration msg_recive;
-    pid_t players[PLAYERS];
-    //lettura del messaggio da parte dei client su msgqueue
+    //lettura del messaggio da parte dei client per la registrazione alla partita su msgqueue
     for (int i=0;message_in_queue(msg_id)!=0; i++){
-	if(msgrcv(msg_id, &msg_recive, sizeof(msg_recive), 0, 0)==-1){
-	    perror("Error read message in a queue");
-	}
-	printf("Pid: %i\n",(int)(msg_recive.pid));
-	players[i]=msg_recive.pid;
+		if(msgrcv(msg_id, &msg_recive, sizeof(msg_recive), 0, 0)==-1){
+			perror("Error read message in a queue");
+		}
+		printf("Pid: %i\n",(int)(msg_recive.info.pid));
+		p[i].pid=msg_recive.info.pid;
+		strcpy(p[i].name, msg_recive.info.name);
     }
+
+	printf("Pid: %i, Name: %s\n", p[0].pid, p[0].name);
+	printf("Pid: %i, Name: %s\n",p[1].pid, p[1].name);
 
 
     //risposta del server ai client su msgqueue
@@ -133,15 +193,16 @@ int main(int argc, char **argv){
     msg_send.info.height = dim_map[1];
     msg_send.info.shared_memory = shm_id_map;
 
-    for(int i=0;i<PLAYERS; i++){//risposta per ogni client
-	msg_send.info.semaphore=(int)(sem_id_player[i]);
-	msg_send.info.n_player=(i+1);
-	msg_send.info.symbol=symbols[i];
-	msg_send.msg_type=(long int)(players[i]);
-	if(msgsnd(msg_id, &msg_send, sizeof(struct info_game), 0)==-1){
-	    perror("Error send message on Server");
-	exit(0);
-	}
+    for(int i=0; i<PLAYERS; i++){//risposta per ogni client
+		msg_send.info.semaphore=(int)(sem_id_player[i]);
+		msg_send.info.n_player=(i+1);
+		strcpy(msg_send.info.name_vs, p[1-i].name);
+		msg_send.info.symbol=symbols[i];
+		msg_send.msg_type=(long int)(p[i].pid);
+		if(msgsnd(msg_id, &msg_send, sizeof(struct info_game), 0)==-1){
+			perror("Error send message on Server");
+		exit(0);
+		}
     }
 
     //Attach della memorie condivise
@@ -158,50 +219,112 @@ int main(int argc, char **argv){
     sops.sem_op=-1;
     sops.sem_num=2;
 
-    if(semop(sem_id_access, &sops,1)==-1){//sblocco i client per la lettura dei messaggi
-		perror("Error server semop");
-    }
+    do{
+		ret = semop(sem_id_access,&sops,1);
+	}while(ret == -1 && errno == EINTR);
+	if (ret == -1 && errno != EINTR ){
+		perror("Error with semop Client turn");
+	}
 
-	while (1){
-		//Il truno inizia dal primo giocatore iscritto alla partita!
+	int check;
+	while(check_map_game(shm_map, dim_map[0])){
+		//Inizio turno giocatore 1
 		struct sembuf start_turn[2] = {{0,1,0},{1,1,0}};
-		if(semop(sem_id_player[0],start_turn,2)==-1){
-			perror("Error semaphore ops!");
-			printf("File: %s, Line %i\n", __FILE__, __LINE__);
+		do{
+			ret = semop(sem_id_player[0],start_turn,2);
+		}while(ret == -1 && errno == EINTR);
+		if(ret == -1 && errno != EINTR ){
+			perror("Error with semop Client turn");
 		}
 
 		struct sembuf end_turn[2] = {{0,0,0},{1,0,0}};
-		//Il turno del giocatore 1 finisce
-		if(semop(sem_id_player[0],end_turn, 2)==-1){
-			perror("Error semaphore ops!");
-			printf("File: %s, Line %i\n", __FILE__, __LINE__);
+
+		//Fine turno giocatore 2
+		do{
+			ret = semop(sem_id_player[0],end_turn,2);
+		}while(ret == -1 && errno == EINTR);
+		if(ret == -1 && errno != EINTR ){
+			perror("Error with semop Client turn");
 		}
 
-
-		if(check_winner(shm_map, dim_map[0], dim_map[1], symbols)){
-			printf("Player 1 won the game!\n");
-			kill(players[0], SIGUSR1);
+		if((check=check_winner(shm_map, dim_map[0], dim_map[1], symbols)) == -1){ //informazioni della fine della partita ai client
+			printf("Tie!\n");
+			struct msg_end_game msg;
+			for (int i=0; i<PLAYERS; i++){
+				msg.msg_type = (long int)p[i].pid;
+				msg.info.winner = -1;
+				msg.info.status = 0;
+				if(msgsnd(msg_id, &msg, sizeof(msg), 0)==-1){
+					perror("Error send message on Server");
+					exit(0);
+				}
+				kill(p[i].pid, SIGUSR1);
+			}
+			break;
+		}
+		else if (check){
+			struct msg_end_game msg;
+			for (int i=0; i<PLAYERS; i++){
+				msg.msg_type = (long int)p[i].pid;
+				msg.info.winner = i==0 ? 1 : 0;
+				msg.info.status = 0;
+				if(msgsnd(msg_id, &msg, sizeof(msg), 0)==-1){
+					perror("Error send message on Server");
+					exit(0);
+				}
+				kill(p[i].pid, SIGUSR1);
+			}
 			break;
 		}
 
 		//Inizio turno giocatore 2
-		if(semop(sem_id_player[1], start_turn, 2)){
-			perror("Error semaphore ops!");
-			printf("File: %s Line %i\n", __FILE__,__LINE__);
-		}
-		//Fine turno giocatore 2
-		if(semop(sem_id_player[1],end_turn, 2)==-1){
-			perror("Error semaphore ops!");
-			printf("File: %s, Line %i\n", __FILE__, __LINE__);
+		do{
+			ret = semop(sem_id_player[1],start_turn,2);
+		}while(ret == -1 && errno == EINTR);
+		if(ret == -1 && errno != EINTR ){
+			perror("Error with semop Client turn");
 		}
 
-		if(check_winner(shm_map, dim_map[0], dim_map[1], symbols)){
-			printf("Player 2 won the game!\n");
-			kill(players[1], SIGUSR1);
+		//Fine turno giocatore 2
+		do{
+			ret = semop(sem_id_player[1],start_turn,2);
+		}while(ret == -1 && errno == EINTR);
+		if(ret == -1 && errno != EINTR ){
+			perror("Error with semop Client turn");
+		}
+
+		if((check=check_winner(shm_map, dim_map[0], dim_map[1], symbols)) == -1){ //informazioni della fine della partita ai client
+			printf("Tie!\n");
+			struct msg_end_game msg;
+			for (int i=0; i<PLAYERS; i++){
+				msg.msg_type = (long int)p[i].pid;
+				msg.info.winner = -1;
+				msg.info.status = 0;
+				if(msgsnd(msg_id, &msg, sizeof(msg), 0)==-1){
+					perror("Error send message on Server");
+					exit(0);
+				}
+				kill(p[i].pid, SIGUSR1);
+			}
+			break;
+		}
+		else if (check){
+			struct msg_end_game msg;
+			for (int i=0; i<PLAYERS; i++){
+				msg.msg_type = (long int)p[i].pid;
+				msg.info.winner = i==1 ? 1 : 0;
+				msg.info.status = 0;
+				if(msgsnd(msg_id, &msg, sizeof(msg), 0)==-1){
+					perror("Error send message on Server");
+					exit(0);
+				}
+				kill(p[i].pid, SIGUSR1);
+			}
 			break;
 		}
 		//cancellazione delle IPC create
 	}
+	sleep(3);
     shm_remove(shm_id_map);
     sem_remove(sem_id_player[0]);
     sem_remove(sem_id_player[1]);
@@ -220,7 +343,14 @@ void print_map(char map[],int width,int height){
     }
 }
 
-
+int check_map_game(char* map, int width){
+	for (int i=0; i<width; i++){
+		if (map[i]==' '){
+			return 1;
+		}
+	}
+	return 0;
+}
 
 int message_in_queue(int msqid){
     struct msqid_ds msq_info;
@@ -272,6 +402,16 @@ void check_args(int argc, char **argv, int dim[]){
 }
 
 int check_winner(char* map, int width, int height, char symbol[]){
+	//check parità
+	int valid=0;
+	for (int i=0; i<width; i++){
+		if(map[i] != ' '){
+			valid++;
+		}
+	}
+	if (valid==width){
+		return -1;
+	}
 	//check riga
 	for (int i=0; i<height; i++){
 		for (int j=0,p1=0,p2=0; j<width; j++){
@@ -308,7 +448,6 @@ int check_winner(char* map, int width, int height, char symbol[]){
 				p2=0;
 				p1=0;
 			}
-			printf("%i %i\n",p1,p2);
 			if (p1>=4 || p2>=4){
 				return 1;
 			}
