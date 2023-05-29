@@ -29,6 +29,7 @@ void print_map(char*, int, int);
 char get_value_by_position(char*, int, int, int, int);
 int check_winner(char*, int, int, char*);
 int check_map_game(char*, int);
+void clear_ipc();
 
 struct info_game{
     int n_player;
@@ -39,6 +40,7 @@ struct info_game{
     int shared_memory;
 	char name_vs[16]; //nome avversario
     pid_t pid_server;
+	int sem_end;
 };
 
 struct player{
@@ -77,6 +79,11 @@ struct msg_registration{
 
 int msg_id=0;
 struct player p[PLAYERS];
+int sem_id_player[PLAYERS];
+int sem_id_end_player;
+int sem_id_access;
+int shm_id_map;
+int counter_c=0;
 
 
 void signal_client_exit(int sig){
@@ -90,22 +97,68 @@ void signal_client_exit(int sig){
 		if (msg.info.status == (long int)(p[i].pid)){
 			printf("%s left the game!\n", p[i].name);
 			msg.msg_type = i == 0 ? (long int)(p[1].pid) : (long int)(p[0].pid);
-			msg.info.winner = 0;
-			msg.info.status = (long int)1;
+			msg.info.winner = 1;
+			msg.info.status = 1;
 			if(msgsnd(msg_id, &msg, sizeof(struct msg_end_game), 0) == -1){
 				perror("Error send message");
 			}
-			kill(p[i].pid, SIGUSR1);
+			kill((pid_t)msg.msg_type, SIGUSR1);
 		}
 	}
+	sleep(3); //sostutuire con semaforo
+	clear_ipc();
 	exit(0);
+}
 
+
+
+void signal_term_server(int sig){
+	struct sembuf sops={0,0,0}; //attesa 0
+	int ret;
+	if(sig==SIGINT && counter_c==0){
+		printf("Press Ctrl+C again for terminate program (5 sec)\n");
+		counter_c++;
+		alarm(5);
+	}
+	else if(sig == SIGINT && counter_c != 0){
+		printf("Server shutdown...\n");
+		//mando ai client l'avviso di terminazione del server
+		for (int i=0; i<PLAYERS; i++){
+			struct msg_end_game msg;
+			msg.msg_type=p[i].pid;
+			msg.info.winner = -1;
+			msg.info.status = 1;
+			if(msgsnd(msg_id, &msg, sizeof(struct msg_end_game), 0)){
+				perror("Error send message on queue");
+			}
+			kill(p[i].pid, SIGUSR1);
+		}
+		do{
+			ret=semop(sem_id_end_player, &sops, 1);
+		}while(ret == -1 && errno == EINTR);
+		if(ret == -1 && errno != EINTR){
+			perror("Error with semop");
+		}
+		clear_ipc();
+	}
+	else if(sig == SIGALRM){
+		counter_c=0;
+		printf("Operation cancelled\n");
+	}
 }
 
 int main(int argc, char **argv){
+	//handler signal
 	if ((signal(SIGUSR2, signal_client_exit) == (void*)-1)){
 		perror("Error setting signal");
 	}
+	if((signal(SIGINT, signal_term_server) == (void*)-1)){
+		perror("Error setting signal");
+	}
+	if((signal(SIGALRM, signal_term_server) == (void*)-1)){
+		perror("Error setting signal");
+	}
+
     int dim_map[2];
     check_args(argc, argv, dim_map);
     char symbols[]={argv[3][0],argv[4][0]};
@@ -113,12 +166,12 @@ int main(int argc, char **argv){
     printf("Symbol Player 1: %c\nSymbol Player 2: %c\n",symbols[0],symbols[1]);
     char  map[dim_map[0]*dim_map[1]];
     printf("Size of map: %lu\n",sizeof(map));
+	char cwd[PATH_MAX];
 
     //working directory per ftok...
 
-    char cwd[PATH_MAX];
     if(getcwd(cwd, sizeof(cwd)) != NULL){
-            printf("Cartella corrente: %s\n",cwd);
+            printf("current work dir: %s\n",cwd);
     }
     else{
 		exit(0);
@@ -136,25 +189,37 @@ int main(int argc, char **argv){
     key_t key_sem_player1 = ftok (cwd, 3);
     key_t key_sem_player2 = ftok (cwd, 4);
     key_t key_sem_players = ftok(cwd,5);
+	key_t key_sem_end_player = ftok(cwd, 6);
 
-    int sem_id_player[]={semget(key_sem_player1, 2, IPC_CREAT | 0666), semget(key_sem_player2, 2, IPC_CREAT | 0666)};//semafori per singolo giocatore
-    int sem_id_access = semget(key_sem_players, 3, IPC_CREAT | 0666); //semaforo per la gestione di accesso alla partita e scambio di messaggi
-    int shm_id_map = shmget(key_shm_map,sizeof(map),IPC_CREAT | 0666); //shared memory il campo di gioco
+
+    sem_id_player[0]=semget(key_sem_player1, 2, IPC_CREAT | 0666);
+	sem_id_player[1]=semget(key_sem_player2, 2, IPC_CREAT | 0666); //semafori per singolo giocatore
+    sem_id_access = semget(key_sem_players, 3, IPC_CREAT | 0666); //semaforo per la gestione di accesso alla partita e scambio di messaggi
+    shm_id_map = shmget(key_shm_map,sizeof(map),IPC_CREAT | 0666); //shared memory il campo di gioco
     msg_id = msgget(key_msg, IPC_CREAT | 0666); //message queue
+	sem_id_end_player = semget(key_sem_end_player, 1, IPC_CREAT | 0666);
     if (shm_id_map==-1 || msg_id==-1 || sem_id_player[0]==-1 || sem_id_player[1]==-1 || sem_id_access==-1){
         perror("Error initialize IPC!");
         exit(0);
     }
 
-
     unsigned short value[]={2,2,1};
     arg_sem.array=value;
 
     //inizializzazione semafori per l'acesso'
-    if(semctl(sem_id_access,3,SETALL,arg_sem)){//semnum è ignorato
-		perror("Semctl error, in SETVAL");
+    if(semctl(sem_id_access,3,SETALL,arg_sem)){	//semnum è ignorato
+		perror("Semctl error, in SETALL");
 		exit(0);
     }
+
+	//setto il valore del semaforo per la conferma terminazione dei client
+	arg_sem.array=NULL;
+	arg_sem.val = 2;
+	if(semctl(sem_id_end_player, 0, SETVAL, arg_sem)){
+		perror("Semctl error in SETVAL");
+		exit(0);
+	}
+
 
     //Server in attesa che i client si iscrivino alla partita
     printf("Waiting Players...\n");
@@ -198,6 +263,7 @@ int main(int argc, char **argv){
 		msg_send.info.n_player=(i+1);
 		strcpy(msg_send.info.name_vs, p[1-i].name);
 		msg_send.info.symbol=symbols[i];
+		msg_send.info.sem_end = sem_id_end_player;
 		msg_send.msg_type=(long int)(p[i].pid);
 		if(msgsnd(msg_id, &msg_send, sizeof(struct info_game), 0)==-1){
 			perror("Error send message on Server");
@@ -239,7 +305,7 @@ int main(int argc, char **argv){
 
 		struct sembuf end_turn[2] = {{0,0,0},{1,0,0}};
 
-		//Fine turno giocatore 2
+		//Fine turno giocatore 1
 		do{
 			ret = semop(sem_id_player[0],end_turn,2);
 		}while(ret == -1 && errno == EINTR);
@@ -287,7 +353,7 @@ int main(int argc, char **argv){
 
 		//Fine turno giocatore 2
 		do{
-			ret = semop(sem_id_player[1],start_turn,2);
+			ret = semop(sem_id_player[1],end_turn,2);
 		}while(ret == -1 && errno == EINTR);
 		if(ret == -1 && errno != EINTR ){
 			perror("Error with semop Client turn");
@@ -325,12 +391,17 @@ int main(int argc, char **argv){
 		//cancellazione delle IPC create
 	}
 	sleep(3);
-    shm_remove(shm_id_map);
+	clear_ipc();
+    return 0;
+}
+
+void clear_ipc(){
+	shm_remove(shm_id_map);
     sem_remove(sem_id_player[0]);
     sem_remove(sem_id_player[1]);
     sem_remove(sem_id_access);
     msg_queue_remove(msg_id);
-    return 0;
+	exit(0);
 }
 
 void print_map(char map[],int width,int height){

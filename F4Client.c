@@ -22,6 +22,7 @@ void check_args(int, char**, char*);
 int msg_id;
 int shm_id;
 pid_t server_pid;
+int sem_end; //semaforo terminazione
 
 
 struct info_game{
@@ -33,6 +34,7 @@ struct info_game{
     int shared_memory;
 	char name_vs[16]; //nome avversario
     pid_t pid_server;
+	int sem_end;
 };
 
 struct msg_info_game{
@@ -61,30 +63,40 @@ struct msg_registration{
 	struct registration info;
 };
 
+
 void sig_handler_end(int sig){
+	int ret;
+	struct sembuf sops= {0,-1,0};
 	printf("SIGUSR1 recive\n");
 	struct msg_end_game msg;
-    if(msgrcv(msg_id, &msg,  sizeof(msg), (long int)(getpid()), 0) == -1){
+    if(msgrcv(msg_id, &msg,  sizeof(struct msg_end_game), (long int)(getpid()), 0) == -1){
 	    perror("Error read message in a queue");
     }
 	if (msg.info.winner == -1){
-		printf("Tie!");
+		printf("Tie!\n");
+		if(msg.info.status == 1){
+			printf("Server has been terminated\n");
+		}
 	}
 	else if (msg.info.winner == 0){
 		printf("You lose the game!\n");
 	}
 	else {
-		printf("Player%i Win!\n",msg.info.winner);
+		printf("You won the match\n");
 		if(msg.info.status==1){
 			printf("Other player retired from the match!\n");
 		}
 	}
+	do{
+		ret = semop(sem_end, &sops, 1);
+	}while(ret == -1 && errno != EINTR);
 	exit(0);
 }
 
 void sig_handler_exit(int sig){
 	printf("SIGINT recive\n");
 	char a;
+	fdrain(stdin);
 	printf("Are you sure to exit of the game? [y/n]");
 	a=fgetc(stdin);
 	if(a=='y' || a=='Y'){
@@ -178,7 +190,7 @@ int main(int argc, char** argv){
 
     //lettura dei messaggi in queue
     struct msg_info_game info_recive;
-    if(msgrcv(msg_id, &info_recive, sizeof(info_recive),(long int)(getpid()), 0)==-1){
+    if(msgrcv(msg_id, &info_recive, sizeof(struct msg_info_game),(long int)(getpid()), 0)==-1){
 	    perror("Error read message in a queue");
     }
     printf("Id shared memory: %i\n",info_recive.info.shared_memory);
@@ -186,12 +198,14 @@ int main(int argc, char** argv){
     printf("Dim map: %i x %i\n",info_recive.info.width, info_recive.info.height);
 	printf("Opponent name: %s\n", info_recive.info.name_vs);
     printf("Your symbol is %c, wait for your turn...\n", info_recive.info.symbol);
+	printf("End semaphore: %i", info_recive.info.sem_end);
 	symbol=info_recive.info.symbol;
     sem_turn=info_recive.info.semaphore;
     shm_id=info_recive.info.shared_memory;
     dim_map[0]=info_recive.info.width;
     dim_map[1]=info_recive.info.height;
 	server_pid = info_recive.info.pid_server;
+	sem_end = info_recive.info.sem_end;
 
     //carico la memoria condivisa
     char *shm_map=shmat(shm_id, NULL, 0666);
