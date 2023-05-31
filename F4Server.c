@@ -12,22 +12,22 @@
 #include <sys/wait.h>
 #include <sys/sem.h>
 #include <sys/msg.h>
+#include "message_queue.c"
+#include "semaphore.c"
+#include "map.c"
+#include "color.c"
 
 #define PATH_MAX 4096
 #define PLAYERS 2
 
 void check_args(int, char**, int[]);
 void print_guide();
-void clean_map(char*, int length, int width);
 void shm_remove(int);
 void sem_remove(int);
 void msg_queue_remove(int);
 int message_in_queue(int);
-int check_winner(char*, int, int, char*);
 void pprint();
-void print_map(char*, int, int);
 char get_value_by_position(char*, int, int, int, int);
-int check_winner(char*, int, int, char*);
 int check_map_game(char*, int);
 void clear_ipc();
 
@@ -87,6 +87,7 @@ int counter_c=0;
 
 
 void signal_client_exit(int sig){
+	struct sembuf sops={0,0,0}; //attesa 0
 	printf("One player left the game\n");
 	struct msg_end_game msg;
 	if(msgrcv(msg_id, &msg, sizeof(struct msg_end_game), (long int)(getpid()), 0) == -1){
@@ -99,13 +100,11 @@ void signal_client_exit(int sig){
 			msg.msg_type = i == 0 ? (long int)(p[1].pid) : (long int)(p[0].pid);
 			msg.info.winner = 1;
 			msg.info.status = 1;
-			if(msgsnd(msg_id, &msg, sizeof(struct msg_end_game), 0) == -1){
-				perror("Error send message");
-			}
+			send_message(msg_id, &msg, sizeof(struct msg_end_game), 0);
 			kill((pid_t)msg.msg_type, SIGUSR1);
 		}
 	}
-	sleep(3); //sostutuire con semaforo
+	semop_siginterrupt(sem_id_end_player, &sops, 1);
 	clear_ipc();
 	exit(0);
 }
@@ -114,7 +113,6 @@ void signal_client_exit(int sig){
 
 void signal_term_server(int sig){
 	struct sembuf sops={0,0,0}; //attesa 0
-	int ret;
 	if(sig==SIGINT && counter_c==0){
 		printf("Press Ctrl+C again for terminate program (5 sec)\n");
 		counter_c++;
@@ -124,22 +122,20 @@ void signal_term_server(int sig){
 		printf("Server shutdown...\n");
 		//mando ai client l'avviso di terminazione del server
 		for (int i=0; i<PLAYERS; i++){
-			struct msg_end_game msg;
-			msg.msg_type=p[i].pid;
-			msg.info.winner = -1;
-			msg.info.status = 1;
-			if(msgsnd(msg_id, &msg, sizeof(struct msg_end_game), 0)){
-				perror("Error send message on queue");
+			if(p[i].pid!=0){
+				struct msg_end_game msg;
+				msg.msg_type=p[i].pid;
+				msg.info.winner = -1;
+				msg.info.status = 1;
+				if(msgsnd(msg_id, &msg, sizeof(struct msg_end_game), 0)){
+					perror("Error send message on queue");
+				}
+				kill(p[i].pid, SIGUSR1);
 			}
-			kill(p[i].pid, SIGUSR1);
 		}
-		do{
-			ret=semop(sem_id_end_player, &sops, 1);
-		}while(ret == -1 && errno == EINTR);
-		if(ret == -1 && errno != EINTR){
-			perror("Error with semop");
-		}
+		semop_siginterrupt(sem_id_end_player, &sops, 1);
 		clear_ipc();
+		exit(0);
 	}
 	else if(sig == SIGALRM){
 		counter_c=0;
@@ -147,7 +143,10 @@ void signal_term_server(int sig){
 	}
 }
 
+
 int main(int argc, char **argv){
+	p[0].pid=0;
+	p[1].pid=0;
 	//handler signal
 	if ((signal(SIGUSR2, signal_client_exit) == (void*)-1)){
 		perror("Error setting signal");
@@ -158,7 +157,6 @@ int main(int argc, char **argv){
 	if((signal(SIGALRM, signal_term_server) == (void*)-1)){
 		perror("Error setting signal");
 	}
-
     int dim_map[2];
     check_args(argc, argv, dim_map);
     char symbols[]={argv[3][0],argv[4][0]};
@@ -192,14 +190,14 @@ int main(int argc, char **argv){
 	key_t key_sem_end_player = ftok(cwd, 6);
 
 
-    sem_id_player[0]=semget(key_sem_player1, 2, IPC_CREAT | 0666);
-	sem_id_player[1]=semget(key_sem_player2, 2, IPC_CREAT | 0666); //semafori per singolo giocatore
-    sem_id_access = semget(key_sem_players, 3, IPC_CREAT | 0666); //semaforo per la gestione di accesso alla partita e scambio di messaggi
-    shm_id_map = shmget(key_shm_map,sizeof(map),IPC_CREAT | 0666); //shared memory il campo di gioco
-    msg_id = msgget(key_msg, IPC_CREAT | 0666); //message queue
-	sem_id_end_player = semget(key_sem_end_player, 1, IPC_CREAT | 0666);
+    sem_id_player[0]=semget(key_sem_player1, 2, IPC_CREAT | IPC_EXCL | 0666);
+	sem_id_player[1]=semget(key_sem_player2, 2, IPC_CREAT | IPC_EXCL | 0666); //semafori per singolo giocatore
+    sem_id_access = semget(key_sem_players, 3, IPC_CREAT | IPC_EXCL | 0666); //semaforo per la gestione di accesso alla partita e scambio di messaggi
+    shm_id_map = shmget(key_shm_map,sizeof(map),IPC_CREAT | IPC_EXCL | 0666); //shared memory il campo di gioco
+    msg_id = msgget(key_msg, IPC_CREAT | IPC_EXCL | 0666); //message queue
+	sem_id_end_player = semget(key_sem_end_player, 1, IPC_CREAT | IPC_EXCL | 0666);
     if (shm_id_map==-1 || msg_id==-1 || sem_id_player[0]==-1 || sem_id_player[1]==-1 || sem_id_access==-1){
-        perror("Error initialize IPC!");
+        perror("Not possible start another server!\n");
         exit(0);
     }
 
@@ -212,6 +210,13 @@ int main(int argc, char **argv){
 		exit(0);
     }
 
+
+    //Server in attesa che i client si iscrivino alla partita
+    printf("Waiting Players...\n");
+    struct sembuf sops={1,0,0}; //attende finchè il semaforo non ha valore 0
+	semop_siginterrupt(sem_id_access,&sops,1);
+    printf("Players ready!\n");
+
 	//setto il valore del semaforo per la conferma terminazione dei client
 	arg_sem.array=NULL;
 	arg_sem.val = 2;
@@ -219,22 +224,6 @@ int main(int argc, char **argv){
 		perror("Semctl error in SETVAL");
 		exit(0);
 	}
-
-
-    //Server in attesa che i client si iscrivino alla partita
-    printf("Waiting Players...\n");
-    struct sembuf sops={1,0,0}; //attende finchè il semaforo non ha valore 0
-	int ret;
-
-	//protezione semafori dalle interruzioni causate dai segnali
-	do{
-		ret = semop(sem_id_access,&sops,1);
-	}while(ret == -1 && errno == EINTR);
-	if (ret == -1 && errno != EINTR ){
-		perror("Error with semop Client turn");
-		exit(0);
-	}
-    printf("Players ready!\n");
 
     struct msg_registration msg_recive;
     //lettura del messaggio da parte dei client per la registrazione alla partita su msgqueue
@@ -246,7 +235,6 @@ int main(int argc, char **argv){
 		p[i].pid=msg_recive.info.pid;
 		strcpy(p[i].name, msg_recive.info.name);
     }
-
 	printf("Pid: %i, Name: %s\n", p[0].pid, p[0].name);
 	printf("Pid: %i, Name: %s\n",p[1].pid, p[1].name);
 
@@ -284,7 +272,7 @@ int main(int argc, char **argv){
     sops.sem_flg=0;
     sops.sem_op=-1;
     sops.sem_num=2;
-
+	int ret;
     do{
 		ret = semop(sem_id_access,&sops,1);
 	}while(ret == -1 && errno == EINTR);
@@ -296,23 +284,17 @@ int main(int argc, char **argv){
 	while(check_map_game(shm_map, dim_map[0])){
 		//Inizio turno giocatore 1
 		struct sembuf start_turn[2] = {{0,1,0},{1,1,0}};
-		do{
-			ret = semop(sem_id_player[0],start_turn,2);
-		}while(ret == -1 && errno == EINTR);
-		if(ret == -1 && errno != EINTR ){
-			perror("Error with semop Client turn");
-		}
-
+		semop_siginterrupt(sem_id_player[0], start_turn, 2);
 		struct sembuf end_turn[2] = {{0,0,0},{1,0,0}};
-
-		//Fine turno giocatore 1
-		do{
-			ret = semop(sem_id_player[0],end_turn,2);
-		}while(ret == -1 && errno == EINTR);
-		if(ret == -1 && errno != EINTR ){
-			perror("Error with semop Client turn");
+		int pid_p=fork();
+		if(pid_p==0){
+			sleep(30);
+			kill(p[0].pid, SIGUSR2);
+			exit(0);
 		}
-
+		//Fine turno giocatore 1
+		semop_siginterrupt(sem_id_player[0], end_turn, 2);
+		kill(pid_p, SIGTERM);
 		if((check=check_winner(shm_map, dim_map[0], dim_map[1], symbols)) == -1){ //informazioni della fine della partita ai client
 			printf("Tie!\n");
 			struct msg_end_game msg;
@@ -344,20 +326,16 @@ int main(int argc, char **argv){
 		}
 
 		//Inizio turno giocatore 2
-		do{
-			ret = semop(sem_id_player[1],start_turn,2);
-		}while(ret == -1 && errno == EINTR);
-		if(ret == -1 && errno != EINTR ){
-			perror("Error with semop Client turn");
+		semop_siginterrupt(sem_id_player[1], start_turn, 2);
+		pid_p=fork();
+		if(pid_p==0){
+			sleep(30);
+			kill(p[1].pid, SIGUSR2);
+			exit(0);
 		}
-
 		//Fine turno giocatore 2
-		do{
-			ret = semop(sem_id_player[1],end_turn,2);
-		}while(ret == -1 && errno == EINTR);
-		if(ret == -1 && errno != EINTR ){
-			perror("Error with semop Client turn");
-		}
+		semop_siginterrupt(sem_id_player[1], end_turn, 2);
+		kill(pid_p, SIGTERM);
 
 		if((check=check_winner(shm_map, dim_map[0], dim_map[1], symbols)) == -1){ //informazioni della fine della partita ai client
 			printf("Tie!\n");
@@ -390,7 +368,9 @@ int main(int argc, char **argv){
 		}
 		//cancellazione delle IPC create
 	}
-	sleep(3);
+	sops.sem_num=0;
+	sops.sem_op=0;
+	semop_siginterrupt(sem_id_end_player, &sops, 1);
 	clear_ipc();
     return 0;
 }
@@ -400,19 +380,11 @@ void clear_ipc(){
     sem_remove(sem_id_player[0]);
     sem_remove(sem_id_player[1]);
     sem_remove(sem_id_access);
+	sem_remove(sem_id_end_player);
     msg_queue_remove(msg_id);
 	exit(0);
 }
 
-void print_map(char map[],int width,int height){
-    for (int i=0; i<height; i++){
-	printf("| ");
-		for(int j=0; j<width; j++){
-	    		printf("%c | ",map[(i*width)+j]);
-		}
-	printf("\n");
-    }
-}
 
 int check_map_game(char* map, int width){
 	for (int i=0; i<width; i++){
@@ -432,11 +404,6 @@ int message_in_queue(int msqid){
     return msq_info.msg_qnum;
 }
 
-void clean_map(char *campo, int height, int width){ //pulizia campo
-    for(int i=0; i<(height*width); i++){
-        campo[i]= ' ';
-    }
-}
 
 void check_args(int argc, char **argv, int dim[]){
     if (argc==1){
@@ -464,180 +431,19 @@ void check_args(int argc, char **argv, int dim[]){
 
     dim[0]=atoi(argv[1]);
     dim[1]=atoi(argv[2]);
-    if(argc != 5 || dim[0] < 5 || dim[1] < 5 || dim[0] > 20 || dim[1] > 20 ){
-        printf("Error: Args not accepted!\n");
+    if(dim[0] < 5 || dim[1] < 5 || dim[0] > 20 || dim[1] > 20 ){
+        printf("Error: Args not accepted! Map dim > 5 && dim < 20\n");
         print_guide();
         exit(0); //TODO Gestione degli errori
     }
 
+	if(argv[3][0] == argv[4][0]){
+		printf("Symbols can't be equals!\n");
+		exit(0);
+	}
+
 }
 
-int check_winner(char* map, int width, int height, char symbol[]){
-	//check parità
-	int valid=0;
-	for (int i=0; i<width; i++){
-		if(map[i] != ' '){
-			valid++;
-		}
-	}
-	if (valid==width){
-		return -1;
-	}
-	//check riga
-	for (int i=0; i<height; i++){
-		for (int j=0,p1=0,p2=0; j<width; j++){
-			if(get_value_by_position(map, width, height, i, j) == symbol[0]){
-				p1++;
-				p2=0;
-			}
-			else if (get_value_by_position(map, width, height, i, j) == symbol[1]){
-				p2++;
-				p1=0;
-			}
-			else if(get_value_by_position(map, width, height, i, j) == ' '){
-				p1=0;
-				p2=0;
-			}
-			if (p1>=4 || p2>=4){
-				return 1;
-			}
-		}
-	}
-
-	//check colonna
-	for (int i=0,p1=0,p2=0; i<width; i++){
-		for (int j=0; j<height; j++){
-			if(get_value_by_position(map, width, height, j, i) == symbol[0]){
-				p1++;
-				p2=0;
-			}
-			else if (get_value_by_position(map, width, height, j, i) == symbol[1]){
-				p2++;
-				p1=0;
-			}
-			else if (get_value_by_position(map, width, height, j, i) == ' '){
-				p2=0;
-				p1=0;
-			}
-			if (p1>=4 || p2>=4){
-				return 1;
-			}
-		}
-	}
-
-	//check diagonale sup   |
-	for(int i=3; i<height ; i++){
-		for(int j=i, k=0, p1=0, p2=0; j>=0 && j<width; j--, k++){
-			if(get_value_by_position(map, width, height, j, k) == symbol[0]){
-				p1++;
-				p2=0;
-			}
-			else if(get_value_by_position(map, width, height, j, k) == symbol[1]){
-				p2++;
-				p1=0;
-			}
-			else if(get_value_by_position(map, width, height, j, k) == ' '){
-				p1=0;
-				p2=0;
-			}
-			if (p1>=4 || p2>=4){
-				return 1;
-			}
-		}
-	}
-
-	//check diagonale inferiore __ sottrazione 3 per limite del campo
-	for (int i=1; i<(width-3); i++){
-		for(int j=height, k=i, p1=0, p2=0; k<width; k++,j--){
-			if(get_value_by_position(map, width, height, j, k)==symbol[0]){
-				p1++;
-				p2=0;
-			}
-			else if(get_value_by_position(map, width, height, j, k)==symbol[1]){
-				p2++;
-				p2=0;
-			}
-			else if(get_value_by_position(map, width, height, j, k)==' '){
-				p1=0;
-				p2=0;
-			}
-			if(p1>=4 || p2 >=4){
-				return 1;
-			}
-		}
-	}
-
-	//check diagonale superiore destra
-	for(int i=height; i>=0; i--){
-		for(int j=height, k=width, p1=0, p2=0; j>=0; j--, k--){
-			if(get_value_by_position(map, width, height, j, k) == symbol[0]){
-				p1++;
-				p2=0;
-			}
-			else if(get_value_by_position(map, width, height, j, k) == symbol[1]){
-				p2++;
-				p1=0;
-			}
-			else if(get_value_by_position(map, width, height, j, k) == ' '){
-				p1=0;
-				p2=0;
-			}
-			if (p1>=4 || p2>=4){
-				return 1;
-			}
-		}
-	}
-
-	//check diagonale inferiore destra
-	for(int i=height; i>=2; i--){
-		for(int j=i, k=width, p1=0, p2=0; j>=0; j--, k--){
-			if(get_value_by_position(map, width, height, j, k) == symbol[0]){
-				p1++;
-				p2=0;
-			}
-			else if(get_value_by_position(map, width, height, j, k) == symbol[1]){
-				p2++;
-				p1=0;
-			}
-			else if(get_value_by_position(map, width, height, j, k) == ' '){
-				p1=0;
-				p2=0;
-			}
-			if (p1>=4 || p2>=4){
-				return 1;
-			}
-		}
-	}
-
-	for(int i=(width-1); i>=2; i--){
-		for(int j=height, k=i, p1=0, p2=0; j>=0; j--, k--){
-			if(get_value_by_position(map, width, height, j, k) == symbol[0]){
-				p1++;
-				p2=0;
-			}
-			else if(get_value_by_position(map, width, height, j, k) == symbol[1]){
-				p2++;
-				p1=0;
-			}
-			else if(get_value_by_position(map, width, height, j, k) == ' '){
-				p1=0;
-				p2=0;
-			}
-			if (p1>=4 || p2>=4){
-				return 1;
-			}
-		}
-	}
-	return 0;
-}
-
-
-char get_value_by_position(char* map, int width, int height, int y, int x){
-	if((x < width && x>=0) && (y < height && y >= 0)){
-		return map[(y*width)+x];
-	}
-	return 'E';
-}
 
 void shm_remove(int shm_id){
     if(shmctl(shm_id,IPC_RMID,NULL) == -1){

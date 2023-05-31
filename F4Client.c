@@ -2,27 +2,27 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <sys/types.h>
-#include <sys/sem.h>
 #include <sys/stat.h>
-#include <sys/msg.h>
 #include <sys/shm.h>
-#include <signal.h>
-#include <errno.h>
+#include "semaphore.c"
+#include "message_queue.c"
+#include "color.c"
+#include "map.c"
 #include <fcntl.h>
 #include <string.h>
 #define PATH_MAX 4096
 
-void print_map(char[],int,int);
 int check_choose(char*, char[], int);
-void insert_getton_on_map(char*, int, int, int, char);
 void fdrain(FILE *const);
 void check_args(int, char**, char*);
 
 //variabili globali per gestione dei segnali
+int sem_access;
 int msg_id;
 int shm_id;
 pid_t server_pid;
 int sem_end; //semaforo terminazione
+int timeout=0;
 
 
 struct info_game{
@@ -65,7 +65,6 @@ struct msg_registration{
 
 
 void sig_handler_end(int sig){
-	int ret;
 	struct sembuf sops= {0,-1,0};
 	printf("SIGUSR1 recive\n");
 	struct msg_end_game msg;
@@ -75,31 +74,41 @@ void sig_handler_end(int sig){
 	if (msg.info.winner == -1){
 		printf("Tie!\n");
 		if(msg.info.status == 1){
+			yellow();
 			printf("Server has been terminated\n");
+			reset_color();
+		}
+		else if(msg.info.status == 0){
+			printf("Map is full!\n");
 		}
 	}
 	else if (msg.info.winner == 0){
+		red();
 		printf("You lose the game!\n");
+		reset_color();
 	}
 	else {
+		green();
 		printf("You won the match\n");
+		reset_color();
 		if(msg.info.status==1){
-			printf("Other player retired from the match!\n");
+			printf("Opponent retired from the match!\n");
 		}
 	}
-	do{
-		ret = semop(sem_end, &sops, 1);
-	}while(ret == -1 && errno != EINTR);
+	semop_siginterrupt(sem_end, &sops, 1);
 	exit(0);
 }
 
 void sig_handler_exit(int sig){
+	struct sembuf sops= {0,-1,0};
 	printf("SIGINT recive\n");
 	char a;
 	fdrain(stdin);
+	yellow();
 	printf("Are you sure to exit of the game? [y/n]");
+	reset_color();
 	a=fgetc(stdin);
-	if(a=='y' || a=='Y'){
+	if(a == 'y' || a == 'Y'){
 		struct msg_end_game msg;
 		msg.msg_type=(long int)server_pid;
 		msg.info.winner=0;
@@ -107,6 +116,7 @@ void sig_handler_exit(int sig){
 		if(msgsnd(msg_id, &msg, sizeof(struct msg_end_game), 0) == -1){
 			perror("Error message send \n");
 		}
+		semop_siginterrupt(sem_end, &sops, 1);
 		kill(server_pid, SIGUSR2); //mando al server il segnale che il giocatore si è ritirato
 		exit(0);
 	}
@@ -120,16 +130,25 @@ void sig_handler_exit(int sig){
 
 }
 
+void sig_timeout_turn(int sig){
+	timeout=1;
+	printf("Timeout! Skip this turn!\n");
+}
+
+void ignore_sigint(int sig){
+	printf("It is not possible to exit the game while waiting for an opponent\n");
+}
+
+
 
 int main(int argc, char** argv){
+	//cambio funzione uscita programma
 	if((signal(SIGUSR1, sig_handler_end))==(void*)-1){
 		perror("Error setting signal");
 	}
-	if ((signal(SIGINT, sig_handler_exit)) == (void*)-1){
+	if (signal(SIGINT, ignore_sigint) == (void*)-1){
 		perror("Error setting signal");
 	}
-
-
 	char name[16];
 	check_args(argc, argv, name);
 	printf("Name player: %s\n", name);
@@ -143,25 +162,24 @@ int main(int argc, char** argv){
     }
 
     //Semaforo per la gestione degli accessi alla partita
-    int sem_access = semget(ftok(cwd,5), 2, 0666); //semaforo per la gestione della prima connessione
+    sem_access = semget(ftok(cwd,5), 2, 0666); //semaforo per la gestione della prima connessione
     int sem_turn;
     int dim_map[2];
 	char symbol;
+
     if (sem_access==-1){
 		perror("Seaphore not created by Server");
 		exit(0);
     }
 
     struct sembuf sops={0,-1,0};
-    if(semop(sem_access,&sops,1)==-1){
-		perror("Error in semop Client");
-		exit(0);
-    }
+	semop_siginterrupt(sem_access, &sops, 1);
 
     //Message queue per l'iscrizione alla partita
     printf("Access to the game...\n");
     if((msg_id=msgget(ftok(cwd,2),0666)) == -1){
 		perror("Error call msgqueue");
+		exit(0);
     }
 
     //il processo manda il proprio pid al server
@@ -169,36 +187,27 @@ int main(int argc, char** argv){
     msg_reg.msg_type=1;
     msg_reg.info.pid=getpid();
 	strcpy(msg_reg.info.name, name);
-    if(msgsnd(msg_id, &msg_reg, sizeof(msg_reg), 0)==-1){
-		perror("Error send message on Server");
-		exit(0);
-    }
+
+	send_message(msg_id, &msg_reg, sizeof(struct msg_registration), 0);
 
     sops.sem_num=1; //semnum set
-    if(semop(sem_access, &sops,1)==-1){
-		perror("Semaphore error");
-		exit(0);
-    }
+	semop_siginterrupt(sem_access, &sops, 1);
 
     sops.sem_num=2;
     sops.sem_op=0;
 
     //in attesa della risposta dal server
-    if (semop(sem_access, &sops,1)==-1){
-		perror("Error semaphore");
-    }
+	semop_siginterrupt(sem_access, &sops, 1);
 
     //lettura dei messaggi in queue
     struct msg_info_game info_recive;
-    if(msgrcv(msg_id, &info_recive, sizeof(struct msg_info_game),(long int)(getpid()), 0)==-1){
-	    perror("Error read message in a queue");
-    }
+	recive_message(msg_id, &info_recive, sizeof(struct msg_info_game), (long int)(getpid()), 0);
     printf("Id shared memory: %i\n",info_recive.info.shared_memory);
     printf("Id semaphore: %i\n",info_recive.info.semaphore);
+	printf("End semaphore: %i\n", info_recive.info.sem_end);
     printf("Dim map: %i x %i\n",info_recive.info.width, info_recive.info.height);
 	printf("Opponent name: %s\n", info_recive.info.name_vs);
     printf("Your symbol is %c, wait for your turn...\n", info_recive.info.symbol);
-	printf("End semaphore: %i", info_recive.info.sem_end);
 	symbol=info_recive.info.symbol;
     sem_turn=info_recive.info.semaphore;
     shm_id=info_recive.info.shared_memory;
@@ -207,47 +216,55 @@ int main(int argc, char** argv){
 	server_pid = info_recive.info.pid_server;
 	sem_end = info_recive.info.sem_end;
 
-    //carico la memoria condivisa
+	if (signal(SIGINT, sig_handler_exit) == (void*)-1){
+		perror("Error setting signal");
+	}
+
+	//carico la memoria condivisa
     char *shm_map=shmat(shm_id, NULL, 0666);
     if (shm_map == (void *) -1){
         perror("Shared memory attach!");
         exit(0);
     }
 
-	while(1){
+	while(1){ //cambiare con for in base alla dimensione del campo(?)
+		if(signal(SIGUSR2, sig_timeout_turn)==(void*)-1){
+			perror("Error in set signal handler");
+		}
 		sops.sem_num=0;
 		sops.sem_op=-1;
 		//Semaforo per l'accesso al truno
-		int ret;
-		do{
-			ret = semop(sem_turn,&sops,1);
-		}while(ret == -1 && errno == EINTR);
-		if (ret == -1 && errno != EINTR ){
-			perror("Error with semop Client turn");
-		}
+		semop_siginterrupt(sem_turn, &sops, 1);
 		print_map(shm_map,dim_map[0],dim_map[1]);
 		char choose[3];
 		int pos=0;
 		//clear standar input
 		do {
+			//setto che il segnale SIGUSR blocchi le chaiamate di sistema
+			if(siginterrupt(SIGUSR2, 1) == -1){
+				perror("Error set siginterrupt");
+			}
 			if(pos==-1){
 				printf("Position not valid\n");
 			}
-			printf("Choose position: ");
 			fdrain(stdin);
+			printf("Choose position: ");
 			fgets(choose,3,stdin);
-		}while((pos=check_choose(choose,shm_map,dim_map[0])) == -1);
-		insert_getton_on_map(shm_map,dim_map[0],dim_map[1], pos, symbol);
-		print_map(shm_map,dim_map[0],dim_map[1]);
-		printf("\n-----------\n");
-		//semaforo per la conferma dell'inserimento della mossa
-		sops.sem_num=1;
-		do{
-			ret = semop(sem_turn, &sops, 1);
-		}while(ret == -1 && errno == EINTR);
-		if( ret == -1 && errno != EINTR ){
-			perror("Error with semop Client turn");
+		}while((pos=check_choose(choose,shm_map,dim_map[0])) == -1 && timeout != 1);
+		//reset signal
+		if(siginterrupt(SIGUSR2, 0) == -1){
+				perror("Error set siginterrupt");
 		}
+		if( timeout!=1 ){
+			insert_getton_on_map(shm_map,dim_map[0],dim_map[1], pos, symbol);
+			print_map(shm_map,dim_map[0],dim_map[1]);
+			printf("\n-----------\n");
+			//semaforo per la conferma dell'inserimento della mossa
+		}
+		sops.sem_num=1;
+		semop_siginterrupt(sem_turn, &sops, 1);
+		timeout=0;
+
 	}
     return 0;
 }
@@ -262,7 +279,7 @@ void check_args(int argc, char** argv, char* name){
 		exit(0);
 	}
 	//se non ha generato errori
-	for (int i=0; i<strlen(argv[1]) ; i++){
+	for (int i=0; i<strlen(argv[1]); i++){
 		name[i] = argv[1][i];
 	}
 	name[strlen(argv[1])] = '\0';
@@ -287,32 +304,12 @@ void fdrain(FILE *const in){
 }
 
 
-void insert_getton_on_map(char map[], int width, int height, int pos, char symbol){
-	//that's simple?
-	for (int i=((height*width)-1)+(pos-(width-1)); i>=0; i=i-width){
-		if(map[i]==' '){
-			map[i]=symbol;
-			break;
-		}
-	}
-}
-
-void print_map(char map[],int width,int height){
-    for (int i=0; i<height; i++){
-	printf("| ");
-		for(int j=0; j<width; j++){
-	    		printf("%c | ",map[(i*width)+j]);
-		}
-	printf("\n");
-    }
-}
-
 
 int check_choose(char* choose, char map[], int width){
-	if(choose[strlen(choose)-1] != '\n') return -1; //se l'ultimo carattere non è \n allora '
+	if(choose[strlen(choose)-1] != '\n') return -1; //se l'ultimo carattere non è \n allora ritorna -1
 	int pos = atoi(choose);
 	if (pos >=0 && pos < width){
-		if(map[pos]!=' '){
+		if(map[pos] != ' '){
 			return -1;
 		}
 	}
