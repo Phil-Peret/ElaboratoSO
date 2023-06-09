@@ -1,4 +1,5 @@
-GESTIONE SICRONIZZAZIONE:
-Server gestisce la creazione di tutte le IPC e infine crea un semaforo di valore 2 per l'accesso ai client
-I client si prenotano alla partita tramite messaggio nella messagequeue
+# Forza4 - Sistemi operativi
+Implementazione del gioco "Froza4" in modalità Client/Server tra processi.
 
+## Sommario
+* [Linee guida [PDF]](Doc/2022-23 Elaborato System Call.pdf)
