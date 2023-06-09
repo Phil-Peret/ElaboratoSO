@@ -9,8 +9,11 @@ void semop_siginterrupt(int sem_id, struct sembuf *sops, int n_ops){
 
 	if(ret == -1){
 		if(errno == EIDRM)
-			perror("Server Il server si è spento");
+			perror("Server down");
+		else if(errno == EAGAIN)
+			perror("No more players are accepted");
 		else
 			perror("Error in semop!");
+	exit(0);
 	}
 }

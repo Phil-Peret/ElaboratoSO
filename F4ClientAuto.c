@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <sys/types.h>
+#include <time.h>
 #include <sys/stat.h>
 #include <sys/shm.h>
 #include "semaphore.c"
@@ -17,6 +18,7 @@ int check_choose(char*, char[], int);
 void fdrain(FILE *const);
 void check_args(int, char**, char*, int);
 int nfile_current_dir(char*);
+int valid_position(char*, int, int*);
 
 //variabili globali per gestione dei segnali
 int sem_access;
@@ -25,8 +27,6 @@ int shm_id;
 pid_t server_pid;
 int sem_end; //semaforo terminazione
 int timeout=0;
-char *shm_map;
-int dim_map[2];
 
 
 struct info_game{
@@ -78,14 +78,15 @@ struct select_cell{
 };
 
 
+
 void sig_handler_end(int sig){
 	struct sembuf sops= {0,-1,0};
 	printf("SIGUSR1 recive\n");
+
 	struct msg_end_game msg;
     if(msgrcv(msg_id, &msg,  sizeof(struct msg_end_game), (long int)(getpid()), 0) == -1){
 	    perror("Error read message in a queue");
     }
-	print_map(shm_map, dim_map[0], dim_map[1]);
 	if (msg.info.winner == -1){
 		printf("Tie!\n");
 		if(msg.info.status == 1){
@@ -157,14 +158,11 @@ void ignore_sigint(int sig){
 
 
 int main(int argc, char** argv){
+	srand(time(NULL));
 	//cambio funzione uscita programma
 	if((signal(SIGUSR1, sig_handler_end))==(void*)-1){
 		perror("Error setting signal");
 	}
-	if (signal(SIGINT, ignore_sigint) == (void*)-1){
-		perror("Error setting signal");
-	}
-
 	char cwd[PATH_MAX];
     if(getcwd(cwd, sizeof(cwd)) != NULL){
             printf("Cartella corrente: %s\n",cwd);
@@ -181,6 +179,7 @@ int main(int argc, char** argv){
     //Semaforo per la gestione degli accessi alla partita
     sem_access = semget(ftok(cwd,5), 2, 0666); //semaforo per la gestione della prima connessione
     int sem_turn;
+    int dim_map[2];
 	char symbol;
 
     if (sem_access==-1){
@@ -203,7 +202,7 @@ int main(int argc, char** argv){
     struct msg_registration msg_reg;
     msg_reg.msg_type=1;
     msg_reg.info.pid=getpid();
-	msg_reg.info.vs_cpu = argc == (n_file + 2) ? 1 : 0;
+
 	strcpy(msg_reg.info.name, name);
 	send_message(msg_id, &msg_reg, sizeof(struct msg_registration), 0);
 
@@ -225,11 +224,11 @@ int main(int argc, char** argv){
     printf("Dim map: %i x %i\n",info_recive.info.width, info_recive.info.height);
 	printf("Opponent name: %s\n", info_recive.info.name_vs);
     printf("Your symbol is %c, wait for your turn...\n", info_recive.info.symbol);
-	symbol = info_recive.info.symbol;
-    sem_turn = info_recive.info.semaphore;
-    shm_id = info_recive.info.shared_memory;
-    dim_map[0] = info_recive.info.width;
-    dim_map[1] = info_recive.info.height;
+	symbol=info_recive.info.symbol;
+    sem_turn=info_recive.info.semaphore;
+    shm_id=info_recive.info.shared_memory;
+    dim_map[0]=info_recive.info.width;
+    dim_map[1]=info_recive.info.height;
 	server_pid = info_recive.info.pid_server;
 	sem_end = info_recive.info.sem_end;
 
@@ -238,7 +237,7 @@ int main(int argc, char** argv){
 	}
 
 	//carico la memoria condivisa
-    shm_map = shmat(shm_id, NULL, 0666);
+    char *shm_map=shmat(shm_id, NULL, 0666);
     if (shm_map == (void *) -1){
         perror("Shared memory attach!");
         exit(0);
@@ -252,43 +251,40 @@ int main(int argc, char** argv){
 		sops.sem_op=-1;
 		//Semaforo per l'accesso al truno
 		semop_siginterrupt(sem_turn, &sops, 1);
-		print_map(shm_map,dim_map[0],dim_map[1]);
+		//print_map(shm_map,dim_map[0],dim_map[1]);
 		char choose[3];
-		int pos=0;
-		//clear standar input
-		do {
-			//il segnale SIGUSR bloccha le chaiamate di sistema, in modo da sospendere l'esecuzione del codice'
-			if(siginterrupt(SIGUSR2, 1) == -1){
-				perror("Error set siginterrupt");
-			}
-			if(pos==-1){
-				printf("Position not valid\n");
-			}
-			fdrain(stdin);
-			printf("Choose position: ");
-			fgets(choose,3,stdin);
-		}while((pos=check_choose(choose,shm_map,dim_map[0])) == -1 && timeout != 1);
-		//reset signal
-		if(siginterrupt(SIGUSR2, 0) == -1){
-				perror("Error set siginterrupt");
-		}
-		if( timeout!=1 ){
-			struct sembuf wait_confirm = {2,-1,0};
-			struct select_cell sel;
-			sel.msg_type = (long int)server_pid;
-			sel.data.move = pos;
-			send_message(msg_id, &sel, sizeof(struct select_cell), 0);
-			semop_siginterrupt(sem_turn, &wait_confirm,1);
-			print_map(shm_map,dim_map[0],dim_map[1]);
-			printf("\n-----------\n");
-			//semaforo per la conferma dell'inserimento della mossa
-		}
+		int* valid_pos = (int*)malloc(sizeof(int)); //almeno una posizione libera ci deve sempre essere
+		int len_array = valid_position(shm_map, dim_map[0], valid_pos);
+		int pos = valid_pos[rand()%len_array];
+		struct sembuf wait_confirm = {2,-1,0};
+		struct select_cell sel;
+		sel.msg_type = (long int)server_pid;
+		sel.data.move = pos;
+		send_message(msg_id, &sel, sizeof(struct select_cell), 0);
+		semop_siginterrupt(sem_turn, &wait_confirm,1);
+		//insert_getton_on_map(shm_map,dim_map[0],dim_map[1], pos, symbol);
+		//print_map(shm_map,dim_map[0],dim_map[1]);
+		//printf("\n-----------\n");
+		//semaforo per la conferma dell'inserimento della mossa
+
 		sops.sem_num=1;
 		semop_siginterrupt(sem_turn, &sops, 1);
 		timeout=0;
 
 	}
     return 0;
+}
+
+int valid_position(char *map, int width, int *valid_pos){
+	int count=0;
+	for (int i=0; i<width; i++){
+		if(map[i]==' '){
+			count++;
+			valid_pos = realloc(valid_pos, count*sizeof(int));
+			valid_pos[count-1] = i;
+		}
+	}
+	return count;
 }
 
 
