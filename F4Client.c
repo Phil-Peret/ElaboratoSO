@@ -201,32 +201,32 @@ int main(int argc, char** argv){
 
     //il processo manda il proprio pid al server
     struct msg_registration msg_reg;
-    msg_reg.msg_type=1;
-    msg_reg.info.pid=getpid();
+	msg_reg.msg_type=1;
+	msg_reg.info.pid=getpid();
 	msg_reg.info.vs_cpu = argc == (n_file + 2) ? 1 : 0;
 	strcpy(msg_reg.info.name, name);
 	send_message(msg_id, &msg_reg, sizeof(struct msg_registration), 0);
 
-    sops.sem_num=1;
-    sops.sem_op=0;
+	sops.sem_num=1;
+	sops.sem_op=0;
 
-    //in attesa della risposta dal server
+	//in attesa della risposta dal server
 	semop_siginterrupt(sem_access, &sops, 1);
 
     //lettura dei messaggi in queue
-    struct msg_info_game info_recive;
+	struct msg_info_game info_recive;
 	recive_message(msg_id, &info_recive, sizeof(struct msg_info_game), (long int)(getpid()), 0);
-    printf("Id shared memory: %i\n",info_recive.info.shared_memory);
-    printf("Id semaphore: %i\n",info_recive.info.semaphore);
+	printf("Id shared memory: %i\n",info_recive.info.shared_memory);
+	printf("Id semaphore: %i\n",info_recive.info.semaphore);
 	printf("End semaphore: %i\n", info_recive.info.sem_end);
-    printf("Dim map: %i x %i\n",info_recive.info.width, info_recive.info.height);
+	printf("Dim map: %i x %i\n",info_recive.info.width, info_recive.info.height);
 	printf("Opponent name: %s\n", info_recive.info.name_vs);
-    printf("Your symbol is %c, wait for your turn...\n", info_recive.info.symbol);
+	printf("Your symbol is %c, wait for your turn...\n", info_recive.info.symbol);
 	symbol = info_recive.info.symbol;
-    sem_turn = info_recive.info.semaphore;
-    shm_id = info_recive.info.shared_memory;
-    dim_map[0] = info_recive.info.width;
-    dim_map[1] = info_recive.info.height;
+	sem_turn = info_recive.info.semaphore;
+	shm_id = info_recive.info.shared_memory;
+	dim_map[0] = info_recive.info.width;
+	dim_map[1] = info_recive.info.height;
 	server_pid = info_recive.info.pid_server;
 	sem_end = info_recive.info.sem_end;
 
