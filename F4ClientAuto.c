@@ -30,20 +30,20 @@ int timeout=0;
 
 
 struct info_game{
-    int n_player;
+	int n_player;
 	char symbol;
-    int width;
-    int height;
-    int semaphore;
-    int shared_memory;
+	int width;
+	int height;
+	int semaphore;
+	int shared_memory;
 	char name_vs[16]; //nome avversario
-    pid_t pid_server;
+	pid_t pid_server;
 	int sem_end;
 };
 
 struct msg_info_game{
-    long int msg_type;
-    struct info_game info;
+	long int msg_type;
+	struct info_game info;
 
 };
 
@@ -64,7 +64,7 @@ struct registration{
 };
 
 struct msg_registration{
-    long int msg_type;
+	long int msg_type;
 	struct registration info;
 };
 
@@ -84,9 +84,9 @@ void sig_handler_end(int sig){
 	printf("SIGUSR1 recive\n");
 
 	struct msg_end_game msg;
-    if(msgrcv(msg_id, &msg,  sizeof(struct msg_end_game), (long int)(getpid()), 0) == -1){
-	    perror("Error read message in a queue");
-    }
+	if(msgrcv(msg_id, &msg,  sizeof(struct msg_end_game), (long int)(getpid()), 0) == -1){
+		perror("Error read message in a queue");
+	}
 	if (msg.info.winner == -1){
 		printf("Tie!\n");
 		if(msg.info.status == 1){
@@ -164,71 +164,71 @@ int main(int argc, char** argv){
 		perror("Error setting signal");
 	}
 	char cwd[PATH_MAX];
-    if(getcwd(cwd, sizeof(cwd)) != NULL){
-            printf("Cartella corrente: %s\n",cwd);
-    }
-    else{
+	if(getcwd(cwd, sizeof(cwd)) != NULL){
+			printf("Cartella corrente: %s\n",cwd);
+	}
+	else{
 		exit(0);
-    }
+	}
 	int n_file = nfile_current_dir(cwd);
 	char name[16];
 	check_args(argc, argv, name, n_file);
 	printf("Name player: %s\n", name);
 	//cartella corrente for tok
 
-    //Semaforo per la gestione degli accessi alla partita
-    sem_access = semget(ftok(cwd,5), 2, 0666); //semaforo per la gestione della prima connessione
-    int sem_turn;
-    int dim_map[2];
+	//Semaforo per la gestione degli accessi alla partita
+	sem_access = semget(ftok(cwd,5), 2, 0666); //semaforo per la gestione della prima connessione
+	int sem_turn;
+	int dim_map[2];
 	char symbol;
 
-    if (sem_access==-1){
+	if (sem_access==-1){
 		perror("Seaphore not created by Server");
 		exit(0);
-    }
+	}
 
-    struct sembuf sops={0,-1,IPC_NOWAIT};
+	struct sembuf sops={0,-1,IPC_NOWAIT};
 	semop_siginterrupt(sem_access, &sops, 1);
 
-    //Message queue per l'iscrizione alla partita
-    printf("Access to the game...\n");
-    if((msg_id=msgget(ftok(cwd,2),0666)) == -1){
+	//Message queue per l'iscrizione alla partita
+	printf("Access to the game...\n");
+	if((msg_id=msgget(ftok(cwd,2),0666)) == -1){
 		perror("Error call msgqueue");
 		exit(0);
-    }
+	}
 	sops.sem_flg=0; //reset semflg
 
-    //il processo manda il proprio pid al server
-    struct msg_registration msg_reg;
-    msg_reg.msg_type=1;
-    msg_reg.info.pid=getpid();
+	//il processo manda il proprio pid al server
+	struct msg_registration msg_reg;
+	msg_reg.msg_type=1;
+	msg_reg.info.pid=getpid();
 
 	strcpy(msg_reg.info.name, name);
 	send_message(msg_id, &msg_reg, sizeof(struct msg_registration), 0);
 
-    sops.sem_num=1; //semnum set
+	sops.sem_num=1; //semnum set
 	semop_siginterrupt(sem_access, &sops, 1);
 
-    sops.sem_num=2;
-    sops.sem_op=0;
+	sops.sem_num=2;
+	sops.sem_op=0;
 
-    //in attesa della risposta dal server
+	//in attesa della risposta dal server
 	semop_siginterrupt(sem_access, &sops, 1);
 
-    //lettura dei messaggi in queue
-    struct msg_info_game info_recive;
+	//lettura dei messaggi in queue
+	struct msg_info_game info_recive;
 	recive_message(msg_id, &info_recive, sizeof(struct msg_info_game), (long int)(getpid()), 0);
-    printf("Id shared memory: %i\n",info_recive.info.shared_memory);
-    printf("Id semaphore: %i\n",info_recive.info.semaphore);
+	printf("Id shared memory: %i\n",info_recive.info.shared_memory);
+	printf("Id semaphore: %i\n",info_recive.info.semaphore);
 	printf("End semaphore: %i\n", info_recive.info.sem_end);
-    printf("Dim map: %i x %i\n",info_recive.info.width, info_recive.info.height);
+	printf("Dim map: %i x %i\n",info_recive.info.width, info_recive.info.height);
 	printf("Opponent name: %s\n", info_recive.info.name_vs);
-    printf("Your symbol is %c, wait for your turn...\n", info_recive.info.symbol);
+	printf("Your symbol is %c, wait for your turn...\n", info_recive.info.symbol);
 	symbol=info_recive.info.symbol;
-    sem_turn=info_recive.info.semaphore;
-    shm_id=info_recive.info.shared_memory;
-    dim_map[0]=info_recive.info.width;
-    dim_map[1]=info_recive.info.height;
+	sem_turn=info_recive.info.semaphore;
+	shm_id=info_recive.info.shared_memory;
+	dim_map[0]=info_recive.info.width;
+	dim_map[1]=info_recive.info.height;
 	server_pid = info_recive.info.pid_server;
 	sem_end = info_recive.info.sem_end;
 
@@ -237,11 +237,11 @@ int main(int argc, char** argv){
 	}
 
 	//carico la memoria condivisa
-    char *shm_map=shmat(shm_id, NULL, 0666);
-    if (shm_map == (void *) -1){
-        perror("Shared memory attach!");
-        exit(0);
-    }
+	char *shm_map=shmat(shm_id, NULL, 0666);
+	if (shm_map == (void *) -1){
+		perror("Shared memory attach!");
+		exit(0);
+	}
 
 	while(1){ //cambiare con for in base alla dimensione del campo(?)
 		if(signal(SIGUSR2, sig_timeout_turn)==(void*)-1){
@@ -272,7 +272,7 @@ int main(int argc, char** argv){
 		timeout=0;
 
 	}
-    return 0;
+	return 0;
 }
 
 int valid_position(char *map, int width, int *valid_pos){
@@ -294,9 +294,9 @@ int nfile_current_dir(char * path){
 	struct dirent * entry;
 	dirp = opendir(path);
 	while ((entry = readdir(dirp)) != NULL) {
-    		if (entry->d_type == DT_REG) {
-         	count++;
-    		}
+			if (entry->d_type == DT_REG) {
+			 count++;
+			}
 	}
 	closedir(dirp);
 	return count;
@@ -320,20 +320,20 @@ void check_args(int argc, char** argv, char* name, int n_file){
 
 
 void fdrain(FILE *const in){ //apro stdin come file
-    if (in) {
-        int const descriptor = fileno(in);
-        int dummy;
-        long flags;
+	if (in) {
+		int const descriptor = fileno(in);
+		int dummy;
+		long flags;
 
-        flags = fcntl(descriptor, F_GETFL);
-        fcntl(descriptor, F_SETFL, flags | O_NONBLOCK); //setto il flag del filedescriptor aperto (stdin) come non bloccante
+		flags = fcntl(descriptor, F_GETFL);
+		fcntl(descriptor, F_SETFL, flags | O_NONBLOCK); //setto il flag del filedescriptor aperto (stdin) come non bloccante
 
-        do { 	//adesso è possibile "eliminare" i caratteri precedenti immessi nel stdin
-            dummy = getc(in);
-        } while (dummy != EOF);
+		do { 	//adesso è possibile "eliminare" i caratteri precedenti immessi nel stdin
+			dummy = getc(in);
+		} while (dummy != EOF);
 
-        fcntl(descriptor, F_SETFL, flags);
-    }
+		fcntl(descriptor, F_SETFL, flags);
+	}
 }
 
 
