@@ -56,7 +56,7 @@ sudo pacman -S make
 ```
 
 ## Tips&Tricks
-### Gicoare in multiplayer
+### Giocare in multiplayer
 È possibile giocare in modalità multiplayer utilizzando due computer, uno dei due farà da server/client e l'altro solo da client. Sarà sufficente installare il pacchetto openSSH e configurare le due macchine per la connssione.
 
 * ### Ubuntu
