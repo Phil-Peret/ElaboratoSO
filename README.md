@@ -7,6 +7,7 @@ Implementazione del gioco "Forza4" in modalità Client/Server tra processi.
 * [Scelte progettuali](#scelte-progettuali)
 * [Note](#note)
 * [Prerequisiti](#prerequisiti)
+* [Tips&Tricks](#tips&triks)
 
 ## Informazioni generali
 Il progetto prevede l'implementazione del famoso gioco "Forza4" in modalità Client/Server (```F4Client.c``` e ```F4Server.c```) tra processi mediante l'utilizzo di IPC basate su SVr4.
@@ -22,7 +23,7 @@ Il server si mette in attesa dei messaggi di registrazione alla partita. Appena 
 ### Turni di gioco
 I turni di gioco vengono gestiti dal server tramite un set di semafori per ogni client, necessari per la corretta sincronizzazione.
 
-### Gestione doppio <kbd>Ctrl</kbd>+<kbd>C</kbd> per terminazione server
+### Gestione doppio <kbd>Ctrl</kbd>+<kbd>C</kbd> per terminazione server <sup><sub>([reference code](https://github.com/Phil-Peret/ElaboratoSO/blob/1a1804c8deef69775ce23bc0480be666b0c4aa3f/F4Client.c#L117-L146))</sub></sup>
 La gestione del doppio <kbd>Ctrl</kbd>+<kbd>C</kbd> per la corretta terminazione del server è assegnata alla funzione ```signal_term_server``` in risposta al segnale ```SIGINT```. Quest'ultima esegue le seguenti operazioni:
 1. Incrementa la variabile globale ```counter_c``` inizialmente settata a 0.  
 2. Avvia un alarm con un timeout di 5 secondi 
@@ -52,5 +53,18 @@ sudo apt-get install make
 * ### Arch
 ```
 sudo pacman -S make
+```
+
+## Tips&Tricks
+### Gicoare in multiplayer
+È possibile giocare in modalità multiplayer utilizzando due computer, uno dei due farà da server/client e l'altro solo da client. Sarà sufficente installare il pacchetto openSSH e configurare le due macchine per la connssione.
+
+* ### Ubuntu
+```
+sudo apt-get install openssh-server
+```
+* ### Arch
+```
+sudo pacman -S make openssh-server
 ```
 
