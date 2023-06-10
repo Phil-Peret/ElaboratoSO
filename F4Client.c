@@ -207,10 +207,7 @@ int main(int argc, char** argv){
 	strcpy(msg_reg.info.name, name);
 	send_message(msg_id, &msg_reg, sizeof(struct msg_registration), 0);
 
-    sops.sem_num=1; //semnum set
-	semop_siginterrupt(sem_access, &sops, 1);
-
-    sops.sem_num=2;
+    sops.sem_num=1;
     sops.sem_op=0;
 
     //in attesa della risposta dal server

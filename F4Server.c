@@ -94,6 +94,7 @@ int sem_id_end_player;
 int sem_id_access;
 int shm_id_map;
 int counter_c=0;
+pid_t child_pid;
 
 
 void signal_client_exit(int sig){
@@ -129,6 +130,7 @@ void signal_term_server(int sig){
 		alarm(5);
 	}
 	else if(sig == SIGINT && counter_c != 0){
+		kill(child_pid, SIGTERM);
 		printf("Server shutdown...\n");
 		//mando ai client l'avviso di terminazione del server
 		for (int i=0; i<PLAYERS; i++){
@@ -152,7 +154,6 @@ void signal_term_server(int sig){
 		printf("Operation cancelled\n");
 	}
 }
-
 
 
 int main(int argc, char **argv){
@@ -201,7 +202,7 @@ int main(int argc, char **argv){
 
     sem_id_player[0] = semget(key_sem_player1, 3, IPC_CREAT | IPC_EXCL | 0666);
 	sem_id_player[1] = semget(key_sem_player2, 3, IPC_CREAT | IPC_EXCL | 0666); //semafori per singolo giocatore
-    sem_id_access = semget(key_sem_players, 3, IPC_CREAT | IPC_EXCL | 0666); //semaforo per la gestione di accesso alla partita e scambio di messaggi
+    sem_id_access = semget(key_sem_players, 2, IPC_CREAT | IPC_EXCL | 0666); //semaforo per la gestione di accesso alla partita e scambio di messaggi
     shm_id_map = shmget(key_shm_map,sizeof(map),IPC_CREAT | IPC_EXCL | 0666); //shared memory il campo di gioco
     msg_id = msgget(key_msg, IPC_CREAT | IPC_EXCL | 0666); //message queue
 	sem_id_end_player = semget(key_sem_end_player, 1, IPC_CREAT | IPC_EXCL | 0666);
@@ -212,7 +213,7 @@ int main(int argc, char **argv){
         exit(0);
     }
 
-    unsigned short value[]={2,2,1};
+    unsigned short value[]={2,1};
     arg_sem.array=value;
 
     //inizializzazione semafori per l'accesso
@@ -223,7 +224,7 @@ int main(int argc, char **argv){
 
     //Server in attesa che i client si iscrivino alla partita
     printf("Waiting Players...\n");
-    struct sembuf sops={1,0,0}; //attende finchè il semaforo non ha valore 0
+    struct sembuf sops={0,0,0}; //attende finchè il semaforo non ha valore 0
 	//semop_siginterrupt(sem_id_access,&sops,1);
     //printf("Players ready!\n");
 
@@ -277,19 +278,14 @@ int main(int argc, char **argv){
         exit(0);
     }
 
-    clean_map(shm_map, dim_map[0], dim_map[1]);//Set /space in ogni posizione
+    clean_map(shm_map, dim_map[0], dim_map[1]); //Set /space in ogni posizione
 	print_map(shm_map, dim_map[0], dim_map[1]);
     //set semaphore operation
     sops.sem_flg=0;
     sops.sem_op=-1;
-    sops.sem_num=2;
+    sops.sem_num=1;
 	int ret;
-    do{
-		ret = semop(sem_id_access,&sops,1);
-	}while(ret == -1 && errno == EINTR);
-	if (ret == -1 && errno != EINTR ){
-		perror("Error with semop Client turn");
-	}
+	semop_siginterrupt(sem_id_access, &sops, 1);
 
 	int check;
 	while(check_map_game(shm_map, dim_map[0])){
@@ -299,15 +295,17 @@ int main(int argc, char **argv){
 		semop_siginterrupt(sem_id_player[0], start_turn, 2);
 		struct sembuf end_turn[2] = {{0,0,0},{1,0,0}};
 		struct sembuf confirm_move = {2,1,0}; //conferma inserimento mossa nella memoria condivisa
-		int pid_p=fork();
-		if(pid_p==0){
+		child_pid=fork();
+		if(child_pid==0){
+			sigset_t signal_set;
+			sigemptyset(&signal_set);
+			sigaddset(&signal_set, SIGINT);
+			sigprocmask(SIG_BLOCK, &signal_set, NULL);
 			sleep(30);
 			kill(p[0].pid, SIGUSR2);
-			printf("pid server: %li", (long int)server_pid);
 			struct select_cell sel;
 			sel.data.move=-1;
 			sel.msg_type = (long int)server_pid;
-			printf("message type: %li\n",sel.msg_type);
 			send_message(msg_id, &sel, sizeof(struct select_cell), 0); //sblocco padre in attesa di messaggio
 			exit(0);
 		}
@@ -320,7 +318,7 @@ int main(int argc, char **argv){
 		}
 		//Fine turno giocatore 1
 		semop_siginterrupt(sem_id_player[0], end_turn, 2);
-		kill(pid_p, SIGTERM);
+		kill(child_pid, SIGTERM);
 
 		//controllo dello stato della paritita
 		if((check=check_winner(shm_map, dim_map[0], dim_map[1], symbols)) == -1){ //informazioni della fine della partita ai client
@@ -349,11 +347,15 @@ int main(int argc, char **argv){
 
 		//Inizio turno giocatore 2
 		semop_siginterrupt(sem_id_player[1], start_turn, 2);
-		pid_p=fork();
-		if(pid_p==0){
+		child_pid=fork();
+		if(child_pid==0){
+			//aggiungo il segnale SIGINT alla lista dei segnali ignorati/bloccati
+			sigset_t signal_set;
+			sigemptyset(&signal_set);
+			sigaddset(&signal_set, SIGINT);
+			sigprocmask(SIG_BLOCK, &signal_set, NULL);
 			sleep(30);
 			kill(p[1].pid, SIGUSR2);
-			printf("pid server: %li", (long int)server_pid);
 			struct select_cell sel;
 			sel.data.move=-1;
 			sel.msg_type = (long int)server_pid;
@@ -368,7 +370,7 @@ int main(int argc, char **argv){
 		}
 		//Fine turno giocatore 2
 		semop_siginterrupt(sem_id_player[1], end_turn, 2);
-		kill(pid_p, SIGTERM);
+		kill(child_pid, SIGTERM);
 
 		if((check=check_winner(shm_map, dim_map[0], dim_map[1], symbols)) == -1){ //informazioni della fine della partita ai client
 			printf("Tie!\n");
