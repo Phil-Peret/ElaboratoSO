@@ -8,12 +8,12 @@ clientcpu_exe := F4ClientAuto.o
 all: client clientauto server
 
 client: $(client_file)
-	gcc -w $(client_file) -o $(client_exe)
+	gcc -Wall $(client_file) -o $(client_exe)
 
 clientauto: $(clientcpu_file)
-	gcc -w $(clientcpu_file) -o $(clientcpu_exe)
+	gcc -Wall $(clientcpu_file) -o $(clientcpu_exe)
 
 server: $(server_file)
-	gcc -w $(server_file) -o $(server_exe)
+	gcc -Wall $(server_file) -o $(server_exe)
 clean:
 	rm $(server_exe) $(client_exe) $(clientcpu_exe)
