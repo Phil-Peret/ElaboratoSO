@@ -65,6 +65,6 @@ sudo apt-get install openssh-server
 ```
 * ### Arch
 ```
-sudo pacman -S make openssh-server
+sudo pacman -S openssh-server
 ```
 
