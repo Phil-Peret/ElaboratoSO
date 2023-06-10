@@ -180,7 +180,6 @@ int main(int argc, char** argv){
 	sem_access = semget(ftok(cwd,5), 2, 0666); //semaforo per la gestione della prima connessione
 	int sem_turn;
 	int dim_map[2];
-	char symbol;
 
 	if (sem_access==-1){
 		perror("Seaphore not created by Server");
@@ -224,7 +223,6 @@ int main(int argc, char** argv){
 	printf("Dim map: %i x %i\n",info_recive.info.width, info_recive.info.height);
 	printf("Opponent name: %s\n", info_recive.info.name_vs);
 	printf("Your symbol is %c, wait for your turn...\n", info_recive.info.symbol);
-	symbol=info_recive.info.symbol;
 	sem_turn=info_recive.info.semaphore;
 	shm_id=info_recive.info.shared_memory;
 	dim_map[0]=info_recive.info.width;
@@ -252,7 +250,6 @@ int main(int argc, char** argv){
 		//Semaforo per l'accesso al truno
 		semop_siginterrupt(sem_turn, &sops, 1);
 		//print_map(shm_map,dim_map[0],dim_map[1]);
-		char choose[3];
 		int* valid_pos = (int*)malloc(sizeof(int)); //almeno una posizione libera ci deve sempre essere
 		int len_array = valid_position(shm_map, dim_map[0], valid_pos);
 		int pos = valid_pos[rand()%len_array];

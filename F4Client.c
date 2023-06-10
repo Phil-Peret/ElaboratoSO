@@ -181,7 +181,6 @@ int main(int argc, char** argv){
 	//Semaforo per la gestione degli accessi alla partita
 	sem_access = semget(ftok(cwd,5), 2, 0666); //semaforo per la gestione della prima connessione
 	int sem_turn;
-	char symbol;
 
 	if (sem_access==-1){
 		perror("Seaphore not created by Server");
@@ -222,7 +221,6 @@ int main(int argc, char** argv){
 	printf("Dim map: %i x %i\n",info_recive.info.width, info_recive.info.height);
 	printf("Opponent name: %s\n", info_recive.info.name_vs);
 	printf("Your symbol is %c, wait for your turn...\n", info_recive.info.symbol);
-	symbol = info_recive.info.symbol;
 	sem_turn = info_recive.info.semaphore;
 	shm_id = info_recive.info.shared_memory;
 	dim_map[0] = info_recive.info.width;

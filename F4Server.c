@@ -248,7 +248,7 @@ int main(int argc, char **argv){
 			printf("CPU Player create!\n");
 			pid=fork();
 			if(pid==0){
-				execl(strcat(cwd, "/F4ClientAuto.o"),"CPU");
+				execl(strcat(cwd, "/F4ClientAuto.o"),"CPU",(char *)NULL);
 			}
 		}
 	}
@@ -284,7 +284,6 @@ int main(int argc, char **argv){
 	sops.sem_flg=0;
 	sops.sem_op=-1;
 	sops.sem_num=1;
-	int ret;
 	semop_siginterrupt(sem_id_access, &sops, 1);
 
 	int check;
