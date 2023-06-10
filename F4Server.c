@@ -32,14 +32,14 @@ int check_map_game(char*, int);
 void clear_ipc();
 
 struct info_game{
-    int n_player;
+	int n_player;
 	char symbol;
-    int width;
-    int height;
-    int semaphore;
-    int shared_memory;
+	int width;
+	int height;
+	int semaphore;
+	int shared_memory;
 	char name_vs[16]; //nome avversario
-    pid_t pid_server;
+	pid_t pid_server;
 	int sem_end;
 };
 
@@ -49,8 +49,8 @@ struct player{
 };
 
 struct msg_info_game{
-    long int msg_type;
-    struct info_game info;
+	long int msg_type;
+	struct info_game info;
 
 };
 
@@ -72,7 +72,7 @@ struct registration{
 };
 
 struct msg_registration{
-    long int msg_type;
+	long int msg_type;
 	struct registration info;
 };
 
@@ -169,64 +169,64 @@ int main(int argc, char **argv){
 	if(signal(SIGALRM, signal_term_server) == (void*)-1){
 		perror("Error setting signal");
 	}
-    int dim_map[2];
-    check_args(argc, argv, dim_map);
-    char symbols[]={argv[3][0],argv[4][0]};
-    printf("width: %d, height: %d \n",dim_map[0], dim_map[1]);
-    printf("Symbol Player 1: %c\nSymbol Player 2: %c\n",symbols[0],symbols[1]);
-    char  map[dim_map[0]*dim_map[1]];
-    printf("Size of map: %lu\n",sizeof(map));
+	int dim_map[2];
+	check_args(argc, argv, dim_map);
+	char symbols[]={argv[3][0],argv[4][0]};
+	printf("width: %d, height: %d \n",dim_map[0], dim_map[1]);
+	printf("Symbol Player 1: %c\nSymbol Player 2: %c\n",symbols[0],symbols[1]);
+	char  map[dim_map[0]*dim_map[1]];
+	printf("Size of map: %lu\n",sizeof(map));
 	char cwd[PATH_MAX];
 
-    //working directory per ftok...
+	//working directory per ftok...
 
-    if(getcwd(cwd, sizeof(cwd)) != NULL){
-            printf("current work dir: %s\n",cwd);
-    }
-    else{
+	if(getcwd(cwd, sizeof(cwd)) != NULL){
+			printf("current work dir: %s\n",cwd);
+	}
+	else{
 		exit(0);
-    }
+	}
 
-    union semun {
+	union semun {
 		int val;
 		struct semid_ds *buf;
 		unsigned short  *array;
-    } arg_sem;
+	} arg_sem;
 
-    key_t key_shm_map = ftok(cwd,1);
-    key_t key_msg = ftok(cwd,2);
-    key_t key_sem_player1 = ftok (cwd, 3);
-    key_t key_sem_player2 = ftok (cwd, 4);
-    key_t key_sem_players = ftok(cwd,5);
+	key_t key_shm_map = ftok(cwd,1);
+	key_t key_msg = ftok(cwd,2);
+	key_t key_sem_player1 = ftok (cwd, 3);
+	key_t key_sem_player2 = ftok (cwd, 4);
+	key_t key_sem_players = ftok(cwd,5);
 	key_t key_sem_end_player = ftok(cwd, 6);
 
-    sem_id_player[0] = semget(key_sem_player1, 3, IPC_CREAT | IPC_EXCL | 0666);
+	sem_id_player[0] = semget(key_sem_player1, 3, IPC_CREAT | IPC_EXCL | 0666);
 	sem_id_player[1] = semget(key_sem_player2, 3, IPC_CREAT | IPC_EXCL | 0666); //semafori per singolo giocatore
-    sem_id_access = semget(key_sem_players, 2, IPC_CREAT | IPC_EXCL | 0666); //semaforo per la gestione di accesso alla partita e scambio di messaggi
-    shm_id_map = shmget(key_shm_map,sizeof(map),IPC_CREAT | IPC_EXCL | 0666); //shared memory il campo di gioco
-    msg_id = msgget(key_msg, IPC_CREAT | IPC_EXCL | 0666); //message queue
+	sem_id_access = semget(key_sem_players, 2, IPC_CREAT | IPC_EXCL | 0666); //semaforo per la gestione di accesso alla partita e scambio di messaggi
+	shm_id_map = shmget(key_shm_map,sizeof(map),IPC_CREAT | IPC_EXCL | 0666); //shared memory il campo di gioco
+	msg_id = msgget(key_msg, IPC_CREAT | IPC_EXCL | 0666); //message queue
 	sem_id_end_player = semget(key_sem_end_player, 1, IPC_CREAT | IPC_EXCL | 0666);
 
 	//controllo errori nella creazione delle IPC
 	if (shm_id_map==-1 || msg_id==-1 || sem_id_player[0]==-1 || sem_id_player[1]==-1 || sem_id_access==-1){
-        perror("Not possible start another server!\n");
-        exit(0);
-    }
+		perror("Not possible start another server!\n");
+		exit(0);
+	}
 
-    unsigned short value[]={2,1};
-    arg_sem.array=value;
+	unsigned short value[]={2,1};
+	arg_sem.array=value;
 
-    //inizializzazione semafori per l'accesso
-    if(semctl(sem_id_access,3,SETALL,arg_sem)){	//semnum è ignorato
+	//inizializzazione semafori per l'accesso
+	if(semctl(sem_id_access,3,SETALL,arg_sem)){	//semnum è ignorato
 		perror("Semctl error, in SETALL");
 		exit(0);
-    }
+	}
 
-    //Server in attesa che i client si iscrivino alla partita
-    printf("Waiting Players...\n");
-    struct sembuf sops={0,0,0}; //attende finchè il semaforo non ha valore 0
+	//Server in attesa che i client si iscrivino alla partita
+	printf("Waiting Players...\n");
+	struct sembuf sops={0,0,0}; //attende finchè il semaforo non ha valore 0
 	//semop_siginterrupt(sem_id_access,&sops,1);
-    //printf("Players ready!\n");
+	//printf("Players ready!\n");
 
 	//setto il valore del semaforo per la conferma terminazione dei client
 	arg_sem.array=NULL;
@@ -236,9 +236,9 @@ int main(int argc, char **argv){
 		exit(0);
 	}
 	int pid;
-    struct msg_registration msg_recive;
-    //lettura del messaggio da parte dei client per la registrazione alla partita su msgqueue
-    for (int i=0; i<PLAYERS; i++){
+	struct msg_registration msg_recive;
+	//lettura del messaggio da parte dei client per la registrazione alla partita su msgqueue
+	for (int i=0; i<PLAYERS; i++){
 		recive_message(msg_id, &msg_recive, sizeof(msg_recive), 1, 0);
 		printf("Player %s has send message on queue!\n", msg_recive.info.name);
 		printf("Pid: %i\n",(int)(msg_recive.info.pid));
@@ -251,17 +251,17 @@ int main(int argc, char **argv){
 				execl(strcat(cwd, "/F4ClientAuto.o"),"CPU");
 			}
 		}
-    }
+	}
 
 
-    //risposta del server ai client su msgqueue
-    struct msg_info_game msg_send;
-    msg_send.info.pid_server=getpid();
-    msg_send.info.width = dim_map[0];
-    msg_send.info.height = dim_map[1];
-    msg_send.info.shared_memory = shm_id_map;
+	//risposta del server ai client su msgqueue
+	struct msg_info_game msg_send;
+	msg_send.info.pid_server=getpid();
+	msg_send.info.width = dim_map[0];
+	msg_send.info.height = dim_map[1];
+	msg_send.info.shared_memory = shm_id_map;
 
-    for(int i=0; i<PLAYERS; i++){//risposta per ogni client
+	for(int i=0; i<PLAYERS; i++){//risposta per ogni client
 		msg_send.info.semaphore=(int)(sem_id_player[i]);
 		msg_send.info.n_player=(i+1);
 		strcpy(msg_send.info.name_vs, p[1-i].name);
@@ -269,21 +269,21 @@ int main(int argc, char **argv){
 		msg_send.info.sem_end = sem_id_end_player;
 		msg_send.msg_type=(long int)(p[i].pid);
 		send_message(msg_id, &msg_send, sizeof(struct info_game), 0);
-    }
+	}
 
-    //Attach della memorie condivise
-    char *shm_map=shmat(shm_id_map, NULL, 0666);
-    if (shm_map == (void *) -1){
-        perror("Shared memory attach!");
-        exit(0);
-    }
+	//Attach della memorie condivise
+	char *shm_map=shmat(shm_id_map, NULL, 0666);
+	if (shm_map == (void *) -1){
+		perror("Shared memory attach!");
+		exit(0);
+	}
 
-    clean_map(shm_map, dim_map[0], dim_map[1]); //Set /space in ogni posizione
+	clean_map(shm_map, dim_map[0], dim_map[1]); //Set /space in ogni posizione
 	print_map(shm_map, dim_map[0], dim_map[1]);
-    //set semaphore operation
-    sops.sem_flg=0;
-    sops.sem_op=-1;
-    sops.sem_num=1;
+	//set semaphore operation
+	sops.sem_flg=0;
+	sops.sem_op=-1;
+	sops.sem_num=1;
 	int ret;
 	semop_siginterrupt(sem_id_access, &sops, 1);
 
@@ -406,16 +406,16 @@ int main(int argc, char **argv){
 	sops.sem_op=0;
 	semop_siginterrupt(sem_id_end_player, &sops, 1);
 	clear_ipc();
-    return 0;
+	return 0;
 }
 
 void clear_ipc(){
 	shm_remove(shm_id_map);
-    sem_remove(sem_id_player[0]);
-    sem_remove(sem_id_player[1]);
-    sem_remove(sem_id_access);
+	sem_remove(sem_id_player[0]);
+	sem_remove(sem_id_player[1]);
+	sem_remove(sem_id_access);
 	sem_remove(sem_id_end_player);
-    msg_queue_remove(msg_id);
+	msg_queue_remove(msg_id);
 	exit(0);
 }
 
@@ -430,32 +430,32 @@ int check_map_game(char* map, int width){
 }
 
 int message_in_queue(int msqid){
-    struct msqid_ds msq_info;
-    if(msgctl(msqid, IPC_STAT, &msq_info)==-1){
+	struct msqid_ds msq_info;
+	if(msgctl(msqid, IPC_STAT, &msq_info)==-1){
 	perror("Error get info by msq");
 	exit(0);
-    }
-    return msq_info.msg_qnum;
+	}
+	return msq_info.msg_qnum;
 }
 
 
 void check_args(int argc, char **argv, int dim[]){
-    if (argc==1){
-        printf("No argument passed\n");
-        print_guide();
-        exit(0);
-    }
+	if (argc==1){
+		printf("No argument passed\n");
+		print_guide();
+		exit(0);
+	}
 
-    if(strcmp(argv[1],"-h")==0){
-        print_guide();
-        exit(0);
-    }
+	if(strcmp(argv[1],"-h")==0){
+		print_guide();
+		exit(0);
+	}
 
-    if (argc != 5){
-        printf("Need 4 args!\n");
-        print_guide();
-        exit(0); //TODO Gestione degli errori
-    }
+	if (argc != 5){
+		printf("Need 4 args!\n");
+		print_guide();
+		exit(0); //TODO Gestione degli errori
+	}
 
 	if(strlen(argv[3]) != 1 || strlen(argv[4]) != 1){
 		printf("Error: Only single char is accepted\n");
@@ -463,13 +463,13 @@ void check_args(int argc, char **argv, int dim[]){
 		exit(0);
 	}
 
-    dim[0]=atoi(argv[1]);
-    dim[1]=atoi(argv[2]);
-    if(dim[0] < 5 || dim[1] < 5 || dim[0] > 20 || dim[1] > 20 ){
-        printf("Error: Args not accepted! Map dim > 5 && dim < 20\n");
-        print_guide();
-        exit(0); //TODO Gestione degli errori
-    }
+	dim[0]=atoi(argv[1]);
+	dim[1]=atoi(argv[2]);
+	if(dim[0] < 5 || dim[1] < 5 || dim[0] > 20 || dim[1] > 20 ){
+		printf("Error: Args not accepted! Map dim > 5 && dim < 20\n");
+		print_guide();
+		exit(0); //TODO Gestione degli errori
+	}
 
 	if(argv[3][0] == argv[4][0]){
 		printf("Symbols can't be equals!\n");
@@ -480,31 +480,31 @@ void check_args(int argc, char **argv, int dim[]){
 
 
 void shm_remove(int shm_id){
-    if(shmctl(shm_id,IPC_RMID,NULL) == -1){
+	if(shmctl(shm_id,IPC_RMID,NULL) == -1){
 	perror("Error detach shm\n");
 	exit(0);
-    }
+	}
 }
 
 void sem_remove(int sem_id){
-    if(semctl(sem_id,0,IPC_RMID) == -1){
+	if(semctl(sem_id,0,IPC_RMID) == -1){
 	perror("Error remove sem\n");
-    }
+	}
 }
 
 void msg_queue_remove(int msg_id){
-    if(msgctl(msg_id,IPC_RMID,NULL)){
+	if(msgctl(msg_id,IPC_RMID,NULL)){
 	perror("Error remove msgqueue");
 	exit(0);
-    }
+	}
 }
 
 void pprint(){
-    printf("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢴⣶⣶⣿⣿⣿⣆\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡀⣀⣠⣴⣾⣮⣝⠿⠿⠿⣻⡟\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣶⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠁⠉⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠟⠉⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⣿⣿⣿⣿⣿⣿⣿⣛⣛⣻⠉⠁⠀⠀⠀⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢿⣿⣿⣿⣿⣿⡿⣿⣿⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠻⠿⠟⠋⠑⠛⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n");
+	printf("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢴⣶⣶⣿⣿⣿⣆\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡀⣀⣠⣴⣾⣮⣝⠿⠿⠿⣻⡟\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣶⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠁⠉⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠟⠉⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⣿⣿⣿⣿⣿⣿⣿⣛⣛⣻⠉⠁⠀⠀⠀⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢿⣿⣿⣿⣿⣿⡿⣿⣿⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠻⠿⠟⠋⠑⠛⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n");
 }
 
 void print_guide(){
-    printf("./F4Server [map_length] [map_width] [symbol_player1] [symbiol_player2]\nesempio:\n./F4Server 5 5 X O\n");
+	printf("./F4Server [map_length] [map_width] [symbol_player1] [symbiol_player2]\nesempio:\n./F4Server 5 5 X O\n");
 }
 
 
