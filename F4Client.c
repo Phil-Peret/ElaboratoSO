@@ -110,6 +110,9 @@ void sig_handler_end(int sig){
 			printf("Opponent retired from the match!\n");
 		}
 	}
+	if(shmdt(shm_map) == -1){ //detach memoria condivisa
+		perror("Error in detach shm");
+	}
 	semop_siginterrupt(sem_end, &sops, 1);
 	exit(0);
 }
@@ -130,6 +133,9 @@ void sig_handler_exit(int sig){
 		msg.info.status=(long int)getpid();
 		if(msgsnd(msg_id, &msg, sizeof(struct msg_end_game), 0) == -1){
 			perror("Error message send \n");
+		}
+		if(shmdt(shm_map) == -1){ //detach memoria condivisa
+			perror("Error in detach shm");
 		}
 		semop_siginterrupt(sem_end, &sops, 1);
 		kill(server_pid, SIGUSR2); //mando al server il segnale che il giocatore si è ritirato
