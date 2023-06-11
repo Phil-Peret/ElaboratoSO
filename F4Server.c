@@ -29,6 +29,7 @@ int message_in_queue(int);
 void pprint();
 char get_value_by_position(char*, int, int, int, int);
 int check_map_game(char*, int);
+int check_winner(int, int, int, char *);
 void clear_ipc();
 
 struct info_game{
@@ -95,6 +96,7 @@ int sem_id_access;
 int shm_id_map;
 int counter_c=0;
 pid_t child_pid;
+char *shm_map;
 
 
 void signal_client_exit(int sig){
@@ -272,14 +274,13 @@ int main(int argc, char **argv){
 	}
 
 	//Attach della memorie condivise
-	char *shm_map=shmat(shm_id_map, NULL, 0666);
+	shm_map=shmat(shm_id_map, NULL, 0666);
 	if (shm_map == (void *) -1){
 		perror("Shared memory attach!");
 		exit(0);
 	}
 
 	clean_map(shm_map, dim_map[0], dim_map[1]); //Set /space in ogni posizione
-	print_map(shm_map, dim_map[0], dim_map[1]);
 	//set semaphore operation
 	sops.sem_flg=0;
 	sops.sem_op=-1;
@@ -319,28 +320,7 @@ int main(int argc, char **argv){
 		semop_siginterrupt(sem_id_player[0], end_turn, 2);
 		kill(child_pid, SIGTERM);
 
-		//controllo dello stato della paritita
-		if((check=check_winner(shm_map, dim_map[0], dim_map[1], symbols)) == -1){ //informazioni della fine della partita ai client
-			printf("Tie!\n");
-			struct msg_end_game msg;
-			for (int i=0; i<PLAYERS; i++){
-				msg.msg_type = (long int)p[i].pid;
-				msg.info.winner = -1;
-				msg.info.status = 0;
-				send_message(msg_id, &msg, sizeof(msg), 0);
-				kill(p[i].pid, SIGUSR1);
-			}
-			break;
-		}
-		else if (check){
-			struct msg_end_game msg;
-			for (int i=0; i<PLAYERS; i++){
-				msg.msg_type = (long int)p[i].pid;
-				msg.info.winner = i==0 ? 1 : 0;
-				msg.info.status = 0;
-				send_message(msg_id, &msg, sizeof(msg), 0);
-				kill(p[i].pid, SIGUSR1);
-			}
+		if(check_winner(0, dim_map[0], dim_map[1], symbols)){ //se c'è un vincitore
 			break;
 		}
 
@@ -370,8 +350,21 @@ int main(int argc, char **argv){
 		//Fine turno giocatore 2
 		semop_siginterrupt(sem_id_player[1], end_turn, 2);
 		kill(child_pid, SIGTERM);
+		if(check_winner(1, dim_map[0], dim_map[1], symbols)){ //se c'è un vincitore
+			break;
+		}
+	}
 
-		if((check=check_winner(shm_map, dim_map[0], dim_map[1], symbols)) == -1){ //informazioni della fine della partita ai client
+	sops.sem_num=0;
+	sops.sem_op=0;
+	semop_siginterrupt(sem_id_end_player, &sops, 1);
+	clear_ipc();
+	return 0;
+}
+
+int check_winner(int player_turn, int width, int height, char* symbols){
+	int check;
+	if((check=check_map(shm_map, width, height, symbols)) == -1){ //informazioni della fine della partita ai client
 			printf("Tie!\n");
 			struct msg_end_game msg;
 			for (int i=0; i<PLAYERS; i++){
@@ -384,27 +377,23 @@ int main(int argc, char **argv){
 				}
 				kill(p[i].pid, SIGUSR1);
 			}
-			break;
-		}
-		else if (check){
-			struct msg_end_game msg;
-			for (int i=0; i<PLAYERS; i++){
-				msg.msg_type = (long int)p[i].pid;
-				msg.info.winner = i==1 ? 1 : 0;
-				msg.info.status = 0;
-				if(msgsnd(msg_id, &msg, sizeof(msg), 0)==-1){
-					perror("Error send message on Server");
-					exit(0);
-				}
-				kill(p[i].pid, SIGUSR1);
-			}
-			break;
-		}
+			return 1;
 	}
-	sops.sem_num=0;
-	sops.sem_op=0;
-	semop_siginterrupt(sem_id_end_player, &sops, 1);
-	clear_ipc();
+	else if (check){
+		struct msg_end_game msg;
+		for (int i=0; i<PLAYERS; i++){
+			msg.msg_type = (long int)p[i].pid;
+			msg.info.winner = i == player_turn ? 1 : 0;
+			msg.info.status = 0;
+			if(msgsnd(msg_id, &msg, sizeof(msg), 0)==-1){
+				perror("Error send message on Server");
+				exit(0);
+			}
+			kill(p[i].pid, SIGUSR1);
+		}
+		return 1;
+	}
+
 	return 0;
 }
 

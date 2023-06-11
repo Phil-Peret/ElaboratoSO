@@ -33,7 +33,7 @@ char get_value_by_position(char* map, int width, int height, int y, int x){
 	return 'E';
 }
 
-int check_winner(char* map, int width, int height, char symbol[]){
+int check_map(char* map, int width, int height, char symbol[]){
 	//check parità
 	int valid=0;
 	for (int i=0; i<width; i++){
