@@ -27,6 +27,7 @@ int shm_id;
 pid_t server_pid;
 int sem_end; //semaforo terminazione
 int timeout=0;
+char *shm_map;
 
 
 struct info_game{
@@ -111,6 +112,9 @@ void sig_handler_end(int sig){
 			printf("Opponent retired from the match!\n");
 		}
 	}
+	if(shmdt(shm_map) == -1){ //detach memoria condivisa
+			perror("Error in detach shm");
+	}
 	semop_siginterrupt(sem_end, &sops, 1);
 	exit(0);
 }
@@ -131,6 +135,9 @@ void sig_handler_exit(int sig){
 		msg.info.status=(long int)getpid();
 		if(msgsnd(msg_id, &msg, sizeof(struct msg_end_game), 0) == -1){
 			perror("Error message send \n");
+		}
+		if(shmdt(shm_map) == -1){ //detach memoria condivisa
+			perror("Error in detach shm");
 		}
 		semop_siginterrupt(sem_end, &sops, 1);
 		kill(server_pid, SIGUSR2); //mando al server il segnale che il giocatore si è ritirato
@@ -205,10 +212,7 @@ int main(int argc, char** argv){
 	strcpy(msg_reg.info.name, name);
 	send_message(msg_id, &msg_reg, sizeof(struct msg_registration), 0);
 
-	sops.sem_num=1; //semnum set
-	semop_siginterrupt(sem_access, &sops, 1);
-
-	sops.sem_num=2;
+	sops.sem_num=1;
 	sops.sem_op=0;
 
 	//in attesa della risposta dal server
@@ -217,12 +221,6 @@ int main(int argc, char** argv){
 	//lettura dei messaggi in queue
 	struct msg_info_game info_recive;
 	recive_message(msg_id, &info_recive, sizeof(struct msg_info_game), (long int)(getpid()), 0);
-	printf("Id shared memory: %i\n",info_recive.info.shared_memory);
-	printf("Id semaphore: %i\n",info_recive.info.semaphore);
-	printf("End semaphore: %i\n", info_recive.info.sem_end);
-	printf("Dim map: %i x %i\n",info_recive.info.width, info_recive.info.height);
-	printf("Opponent name: %s\n", info_recive.info.name_vs);
-	printf("Your symbol is %c, wait for your turn...\n", info_recive.info.symbol);
 	sem_turn=info_recive.info.semaphore;
 	shm_id=info_recive.info.shared_memory;
 	dim_map[0]=info_recive.info.width;
@@ -235,7 +233,7 @@ int main(int argc, char** argv){
 	}
 
 	//carico la memoria condivisa
-	char *shm_map=shmat(shm_id, NULL, 0666);
+	shm_map=shmat(shm_id, NULL, 0666);
 	if (shm_map == (void *) -1){
 		perror("Shared memory attach!");
 		exit(0);

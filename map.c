@@ -17,6 +17,11 @@ void insert_getton_on_map(char map[], int width, int height, int pos, char symbo
 }
 
 void print_map(char map[],int width,int height){
+	for(int i = 0; i<height; i++){
+		printf("  %i ",i);
+	}
+	printf("\n");
+
     for (int i=0; i<height; i++){
 	printf("| ");
 		for(int j=0; j<width; j++){
@@ -110,15 +115,15 @@ int check_map(char* map, int width, int height, char symbol[]){
 	//check diagonale inferiore __ sottrazione 3 per limite del campo
 	for (int i=1; i<(width-3); i++){
 		for(int j=(height-1), k=i, p1=0, p2=0; k<width; k++,j--){
-			if(get_value_by_position(map, width, height, j, k)==symbol[0]){
+			if(get_value_by_position(map, width, height, j, k) == symbol[0]){
 				p1++;
 				p2=0;
 			}
-			else if(get_value_by_position(map, width, height, j, k)==symbol[1]){
+			else if(get_value_by_position(map, width, height, j, k) == symbol[1]){
 				p2++;
-				p2=0;
+				p1=0;
 			}
-			else if(get_value_by_position(map, width, height, j, k)==' '){
+			else if(get_value_by_position(map, width, height, j, k) == ' '){
 				p1=0;
 				p2=0;
 			}

@@ -221,10 +221,13 @@ int main(int argc, char** argv){
 	//lettura dei messaggi in queue
 	struct msg_info_game info_recive;
 	recive_message(msg_id, &info_recive, sizeof(struct msg_info_game), (long int)(getpid()), 0);
+	//print debug
+	/*
 	printf("Id shared memory: %i\n",info_recive.info.shared_memory);
 	printf("Id semaphore: %i\n",info_recive.info.semaphore);
 	printf("End semaphore: %i\n", info_recive.info.sem_end);
 	printf("Dim map: %i x %i\n",info_recive.info.width, info_recive.info.height);
+	*/
 	printf("Opponent name: %s\n", info_recive.info.name_vs);
 	printf("Your symbol is %c, wait for your turn...\n", info_recive.info.symbol);
 	sem_turn = info_recive.info.semaphore;
@@ -299,7 +302,7 @@ int nfile_current_dir(char * path){
 	struct dirent * entry;
 	dirp = opendir(path);
 	while ((entry = readdir(dirp)) != NULL) {
-			if (entry->d_type == DT_REG) {
+			if ((entry->d_type == DT_REG || entry->d_type == DT_DIR) && entry->d_name[0]!='.') {
 			 count++;
 			}
 	}
@@ -308,6 +311,7 @@ int nfile_current_dir(char * path){
 }
 
 void check_args(int argc, char** argv, char* name, int n_file){
+	printf("tot arg : %i num_file: %i\n", argc, n_file);
 	if((argc != 2) && (argc != (n_file + 2))){
 		printf("Error: only one argument can be passed (name player)\n");
 		exit(0);
