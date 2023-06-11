@@ -109,7 +109,7 @@ int check_winner(char* map, int width, int height, char symbol[]){
 
 	//check diagonale inferiore __ sottrazione 3 per limite del campo
 	for (int i=1; i<(width-3); i++){
-		for(int j=height, k=i, p1=0, p2=0; k<width; k++,j--){
+		for(int j=(height-1), k=i, p1=0, p2=0; k<width; k++,j--){
 			if(get_value_by_position(map, width, height, j, k)==symbol[0]){
 				p1++;
 				p2=0;
@@ -130,7 +130,7 @@ int check_winner(char* map, int width, int height, char symbol[]){
 
 	//check diagonale superiore destra
 	for(int i=height; i>=0; i--){
-		for(int j=height, k=width, p1=0, p2=0; j>=0; j--, k--){
+		for(int j=(height-1), k=(width-1), p1=0, p2=0; j>=0; j--, k--){
 			if(get_value_by_position(map, width, height, j, k) == symbol[0]){
 				p1++;
 				p2=0;
@@ -151,7 +151,7 @@ int check_winner(char* map, int width, int height, char symbol[]){
 
 	//check diagonale inferiore destra
 	for(int i=height; i>=2; i--){
-		for(int j=i, k=width, p1=0, p2=0; j>=0; j--, k--){
+		for(int j=i, k=(width-1), p1=0, p2=0; j>=0; j--, k--){
 			if(get_value_by_position(map, width, height, j, k) == symbol[0]){
 				p1++;
 				p2=0;
@@ -171,7 +171,7 @@ int check_winner(char* map, int width, int height, char symbol[]){
 	}
 
 	for(int i=(width-1); i>=2; i--){
-		for(int j=height, k=i, p1=0, p2=0; j>=0; j--, k--){
+		for(int j=(height-1), k=i, p1=0, p2=0; j>=0; j--, k--){
 			if(get_value_by_position(map, width, height, j, k) == symbol[0]){
 				p1++;
 				p2=0;
