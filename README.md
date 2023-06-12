@@ -43,11 +43,10 @@ do{
   ret = semop(sem_id, sops, n_ops);
 }while(ret == -1 && errno == EINTR);
 ```
-* Nella compilazione dei sorgenti con il comando ```make``` sono presenti alcuni warning:
+* Nella compilazione dei sorgenti con il comando ```make``` sono presenti alcuni warning (SA_RESTART fa parte di POSIX):
 ``` 
 warning: ‘siginterrupt’ is deprecated: Use sigaction with SA_RESTART instead [-Wdeprecated-declarations]
 ```
-SA_RESTART fa parte di POSIX
 
 ## Prerequisiti
 È necessario il comando ```make``` per la compilazione del codice
