@@ -246,7 +246,8 @@ int main(int argc, char **argv){
 			printf("CPU Player create!\n");
 			pid=fork();
 			if(pid==0){
-				execl(strcat(cwd, "/F4ClientAuto.o"),"CPU");
+				execl(strcat(cwd, "/F4ClientAuto.o"),"CPU", (char*)NULL);
+				exit(0);
 			}
 		}
 	}

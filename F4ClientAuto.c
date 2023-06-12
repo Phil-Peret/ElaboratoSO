@@ -16,8 +16,6 @@
 
 int check_choose(char*, char[], int);
 void fdrain(FILE *const);
-void check_args(int, char**, char*, int);
-int nfile_current_dir(char*);
 int valid_position(char*, int, int*);
 
 //variabili globali per gestione dei segnali
@@ -177,9 +175,9 @@ int main(int argc, char** argv){
 	else{
 		exit(0);
 	}
-	int n_file = nfile_current_dir(cwd);
+
 	char name[16];
-	check_args(argc, argv, name, n_file);
+	strcpy(name, argv[0]);
 	printf("Name player: %s\n", name);
 	//cartella corrente for tok
 
@@ -282,36 +280,6 @@ int valid_position(char *map, int width, int *valid_pos){
 	return count;
 }
 
-
-int nfile_current_dir(char * path){
-	int count=0;
-	DIR * dirp;
-	struct dirent * entry;
-	dirp = opendir(path);
-	while ((entry = readdir(dirp)) != NULL) {
-			if (entry->d_type == DT_REG) {
-			 count++;
-			}
-	}
-	closedir(dirp);
-	return count;
-}
-
-void check_args(int argc, char** argv, char* name, int n_file){
-	if((argc != 2) && (argc != (n_file + 2))){
-		printf("Error: only one argument can be passed (name player)\n");
-		exit(0);
-	}
-	else if(strlen(argv[1]) > 15){
-		printf("Max 15 char for args name! %lu\n", strlen(argv[1]));
-		exit(0);
-	}
-	//se non ha generato errori
-	for (int i=0; i<strlen(argv[1]); i++){
-		name[i] = argv[1][i];
-	}
-	name[strlen(argv[1])] = '\0';
-}
 
 
 void fdrain(FILE *const in){ //apro stdin come file
