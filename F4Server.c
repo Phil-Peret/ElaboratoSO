@@ -18,6 +18,7 @@
 #include "color.c"
 
 #define PATH_MAX 4096
+#define TIMEOUT 30
 #define PLAYERS 2
 
 void check_args(int, char**, int[]);
@@ -94,8 +95,8 @@ int sem_id_player[PLAYERS];
 int sem_id_end_player;
 int sem_id_access;
 int shm_id_map;
-int counter_c=0;
-pid_t child_pid;
+int counter_c = 0;
+pid_t child_pid = 0;
 char *shm_map;
 
 
@@ -108,7 +109,7 @@ void signal_client_exit(int sig){
 	}
 	for (int i=0; i<PLAYERS; i++){
 		if (msg.info.status == (long int)(p[i].pid)){
-			printf("%s left the game!\n", p[i].name);
+			printf("%s ha lasciato la partita\n", p[i].name);
 			msg.msg_type = i == 0 ? (long int)(p[1].pid) : (long int)(p[0].pid);
 			msg.info.winner = 1;
 			msg.info.status = 1;
@@ -126,12 +127,14 @@ void signal_client_exit(int sig){
 void signal_term_server(int sig){
 	struct sembuf sops={0,0,0}; //attesa 0
 	if(sig==SIGINT && counter_c==0){
-		printf("Press Ctrl+C again for terminate program (5 sec)\n");
+		printf("Premi Ctrl+C per terminare il programma(5 sec)\n");
 		counter_c++;
 		alarm(5);
 	}
 	else if(sig == SIGINT && counter_c != 0){
-		kill(child_pid, SIGTERM);
+		if(child_pid!=0){
+			kill(child_pid, SIGTERM);
+		}
 		printf("Server shutdown...\n");
 		//mando ai client l'avviso di terminazione del server
 		for (int i=0; i<PLAYERS; i++){
@@ -152,7 +155,7 @@ void signal_term_server(int sig){
 	}
 	else if(sig == SIGALRM){
 		counter_c=0;
-		printf("Operation cancelled\n");
+		printf("Operazione annullata\n");
 	}
 }
 
@@ -174,13 +177,13 @@ int main(int argc, char **argv){
 	check_args(argc, argv, dim_map);
 	char symbols[]={argv[3][0],argv[4][0]};
 	char  map[dim_map[0]*dim_map[1]];
-	printf("Size of map: %lu\n",sizeof(map));
+	printf("Dimensione del campo: %lu\n",sizeof(map));
 	char cwd[PATH_MAX];
 
 	//working directory per ftok...
 
 	if(getcwd(cwd, sizeof(cwd)) != NULL){
-			printf("current work dir: %s\n",cwd);
+			printf("Cartella corrente: %s\n",cwd);
 	}
 	else{
 		exit(0);
@@ -222,7 +225,7 @@ int main(int argc, char **argv){
 	}
 
 	//Server in attesa che i client si iscrivino alla partita
-	printf("Waiting Players...\n");
+	printf("In attesa di altri giocatori...\n");
 	struct sembuf sops={0,0,0}; //attende finchè il semaforo non ha valore 0
 	//semop_siginterrupt(sem_id_access,&sops,1);
 	//printf("Players ready!\n");
@@ -241,9 +244,9 @@ int main(int argc, char **argv){
 		recive_message(msg_id, &msg_recive, sizeof(msg_recive), 1, 0);
 		p[i].pid=msg_recive.info.pid;
 		strcpy(p[i].name, msg_recive.info.name);
-		printf("Player %s connected -> symbol %c \n", p[i].name, symbols[i]);
+		printf("Giocatore %s connsesso -> symbol %c \n", p[i].name, symbols[i]);
 		if(msg_recive.info.vs_cpu == 1 && i==0){
-			printf("CPU Player create!\n");
+			printf("CPU Player creato!\n");
 			pid=fork();
 			if(pid==0){
 				execl(strcat(cwd, "/F4ClientAuto.o"),"CPU", (char*)NULL);
@@ -297,7 +300,7 @@ int main(int argc, char **argv){
 			sigemptyset(&signal_set);
 			sigaddset(&signal_set, SIGINT);
 			sigprocmask(SIG_BLOCK, &signal_set, NULL);
-			sleep(30);
+			sleep(TIMEOUT);
 			kill(p[0].pid, SIGUSR2);
 			struct select_cell sel;
 			sel.data.move=-1;
@@ -329,7 +332,7 @@ int main(int argc, char **argv){
 			sigemptyset(&signal_set);
 			sigaddset(&signal_set, SIGINT);
 			sigprocmask(SIG_BLOCK, &signal_set, NULL);
-			sleep(30);
+			sleep(TIMEOUT);
 			kill(p[1].pid, SIGUSR2);
 			struct select_cell sel;
 			sel.data.move=-1;
@@ -360,7 +363,7 @@ int main(int argc, char **argv){
 int check_winner(int player_turn, int width, int height, char* symbols){
 	int check;
 	if((check=check_map(shm_map, width, height, symbols)) == -1){ //informazioni della fine della partita ai client
-			printf("Tie!\n");
+			printf("Pareggio!\n");
 			struct msg_end_game msg;
 			for (int i=0; i<PLAYERS; i++){
 				msg.msg_type = (long int)p[i].pid;
@@ -377,7 +380,7 @@ int check_winner(int player_turn, int width, int height, char* symbols){
 	else if (check){
 		struct msg_end_game msg;
 		for (int i=0; i<PLAYERS; i++){
-			printf("%s won the game\n", p[player_turn].name);
+			printf("%s ha vinto la partita\n", p[player_turn].name);
 			msg.msg_type = (long int)p[i].pid;
 			msg.info.winner = i == player_turn ? 1 : 0;
 			msg.info.status = 0;
@@ -426,7 +429,7 @@ int message_in_queue(int msqid){
 
 void check_args(int argc, char **argv, int dim[]){
 	if (argc==1){
-		printf("No argument passed\n");
+		printf("Nessun arogmento passato\n");
 		print_guide();
 		exit(0);
 	}
@@ -437,13 +440,13 @@ void check_args(int argc, char **argv, int dim[]){
 	}
 
 	if (argc != 5){
-		printf("Need 4 args!\n");
+		printf("Devono essere passati 4 argomenti!\n");
 		print_guide();
 		exit(0); //TODO Gestione degli errori
 	}
 
 	if(strlen(argv[3]) != 1 || strlen(argv[4]) != 1){
-		printf("Error: Only single char is accepted\n");
+		printf("Solo un singolo carattere deve essere passato!\n");
 		print_guide();
 		exit(0);
 	}
@@ -451,13 +454,13 @@ void check_args(int argc, char **argv, int dim[]){
 	dim[0]=atoi(argv[1]);
 	dim[1]=atoi(argv[2]);
 	if(dim[0] < 5 || dim[1] < 5 || dim[0] > 20 || dim[1] > 20 ){
-		printf("Error: Args not accepted! Map dim > 5 && dim < 20\n");
+		printf("La dimensione del campo deve essere compresa da 5 a 20!\n");
 		print_guide();
 		exit(0); //TODO Gestione degli errori
 	}
 
 	if(argv[3][0] == argv[4][0]){
-		printf("Symbols can't be equals!\n");
+		printf("I simboli non possono essere uguali!\n");
 		exit(0);
 	}
 
