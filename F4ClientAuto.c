@@ -26,6 +26,7 @@ pid_t server_pid;
 int sem_end; //semaforo terminazione
 int timeout=0;
 char *shm_map;
+int dim_map[2];
 
 
 struct info_game{
@@ -81,11 +82,11 @@ struct select_cell{
 void sig_handler_end(int sig){
 	struct sembuf sops= {0,-1,0};
 	printf("SIGUSR1 recive\n");
-
 	struct msg_end_game msg;
 	if(msgrcv(msg_id, &msg,  sizeof(struct msg_end_game), (long int)(getpid()), 0) == -1){
 		perror("Error read message in a queue");
 	}
+	print_map(shm_map, dim_map[0], dim_map[1]);
 	if (msg.info.winner == -1){
 		printf("Tie!\n");
 		if(msg.info.status == 1){
@@ -184,8 +185,6 @@ int main(int argc, char** argv){
 	//Semaforo per la gestione degli accessi alla partita
 	sem_access = semget(ftok(cwd,5), 2, 0666); //semaforo per la gestione della prima connessione
 	int sem_turn;
-	int dim_map[2];
-
 	if (sem_access==-1){
 		perror("Seaphore not created by Server");
 		exit(0);

@@ -107,7 +107,7 @@ void sig_handler_end(int sig){
 		printf("You won the match\n");
 		reset_color();
 		if(msg.info.status==1){
-			printf("Opponent retired from the match!\n");
+			printf("L'avversario si è ritirato dalla partita!\n");
 		}
 	}
 	if(shmdt(shm_map) == -1){ //detach memoria condivisa
@@ -123,16 +123,16 @@ void sig_handler_exit(int sig){
 	char a;
 	fdrain(stdin);
 	yellow();
-	printf("Are you sure to exit of the game? [y/n]");
+	printf("Sicuro di uscire dalla partita? Perderai per abbandono... [s/n]");
 	reset_color();
 	a=fgetc(stdin);
-	if(a == 'y' || a == 'Y'){
+	if(a == 's' || a == 'S'){
 		struct msg_end_game msg;
 		msg.msg_type=(long int)server_pid;
 		msg.info.winner=0;
 		msg.info.status=(long int)getpid();
 		if(msgsnd(msg_id, &msg, sizeof(struct msg_end_game), 0) == -1){
-			perror("Error message send \n");
+			perror("Error send message \n");
 		}
 		if(shmdt(shm_map) == -1){ //detach memoria condivisa
 			perror("Error in detach shm");
@@ -145,7 +145,7 @@ void sig_handler_exit(int sig){
 		return;
 	}
 	else{
-		printf("Not valid choose");
+		printf("Scelta non valida");
 		return;
 	}
 
@@ -228,8 +228,8 @@ int main(int argc, char** argv){
 	printf("End semaphore: %i\n", info_recive.info.sem_end);
 	printf("Dim map: %i x %i\n",info_recive.info.width, info_recive.info.height);
 	*/
-	printf("Opponent name: %s\n", info_recive.info.name_vs);
-	printf("Your symbol is %c, wait for your turn...\n", info_recive.info.symbol);
+	printf("Nome dell'avversario: %s\n", info_recive.info.name_vs);
+	printf("Il tuo simbolo è %c, attendi il tuo turno...\n", info_recive.info.symbol);
 	sem_turn = info_recive.info.semaphore;
 	shm_id = info_recive.info.shared_memory;
 	dim_map[0] = info_recive.info.width;
@@ -266,10 +266,10 @@ int main(int argc, char** argv){
 				perror("Error set siginterrupt");
 			}
 			if(pos==-1){
-				printf("Position not valid\n");
+				printf("Posizione non valida\n");
 			}
 			fdrain(stdin);
-			printf("Choose position: ");
+			printf("Scegli la posizione: ");
 			fgets(choose,3,stdin);
 		}while((pos=check_choose(choose,shm_map,dim_map[0])) == -1 && timeout != 1);
 		//reset signal
@@ -284,7 +284,7 @@ int main(int argc, char** argv){
 			send_message(msg_id, &sel, sizeof(struct select_cell), 0);
 			semop_siginterrupt(sem_turn, &wait_confirm,1);
 			print_map(shm_map,dim_map[0],dim_map[1]);
-			printf("\n-----------\n");
+			printf("\n-----------------------\n");
 			//semaforo per la conferma dell'inserimento della mossa
 		}
 		sops.sem_num=1;
@@ -313,11 +313,11 @@ int nfile_current_dir(char * path){
 void check_args(int argc, char** argv, char* name, int n_file){
 	printf("tot arg : %i num_file: %i\n", argc, n_file);
 	if((argc != 2) && (argc != (n_file + 2))){
-		printf("Error: only one argument can be passed (name player)\n");
+		printf("Errore: deve essere passato l'argomento nome del giocatore\n");
 		exit(0);
 	}
 	else if(strlen(argv[1]) > 15){
-		printf("Max 15 char for args name! %lu\n", strlen(argv[1]));
+		printf("Il nome del giocatore deve essere di massimo 15 caratteri! %lu\n", strlen(argv[1]));
 		exit(0);
 	}
 	//se non ha generato errori
