@@ -23,9 +23,9 @@ int sem_access;
 int msg_id;
 int shm_id;
 pid_t server_pid;
-int sem_end; //semaforo terminazione
+int sem_end = 0; //semaforo terminazione
 int timeout=0;
-char *shm_map;
+char *shm_map = NULL;
 int dim_map[2];
 
 
@@ -79,7 +79,7 @@ struct select_cell{
 
 
 void sig_handler_end(int sig){
-	struct sembuf sops= {0,-1,0};
+	struct sembuf sops = {0,-1,0};
 	printf("SIGUSR1 recive\n");
 	struct msg_end_game msg;
 	if(msgrcv(msg_id, &msg,  sizeof(struct msg_end_game), (long int)(getpid()), 0) == -1){
@@ -90,7 +90,7 @@ void sig_handler_end(int sig){
 		printf("Tie!\n");
 		if(msg.info.status == 1){
 			yellow();
-			printf("Server has been terminated\n");
+			printf("Il server è stato terminato \n");
 			reset_color();
 		}
 		else if(msg.info.status == 0){
@@ -110,15 +110,17 @@ void sig_handler_end(int sig){
 			printf("L'avversario si è ritirato dalla partita!\n");
 		}
 	}
-	if(shmdt(shm_map) == -1){ //detach memoria condivisa
-		perror("Error in detach shm");
+	if(sem_end!=0){
+		if(shmdt(shm_map) == -1){ //detach memoria condivisa
+			perror("Error in detach shm");
+		}
+		semop_siginterrupt(sem_end, &sops, 1);
 	}
-	semop_siginterrupt(sem_end, &sops, 1);
 	exit(0);
 }
 
 void sig_handler_exit(int sig){
-	struct sembuf sops= {0,-1,0};
+	struct sembuf sops = {0,-1,0};
 	printf("SIGINT recive\n");
 	char a;
 	fdrain(stdin);
@@ -181,7 +183,7 @@ int main(int argc, char** argv){
 	int n_file = nfile_current_dir(cwd);
 	char name[16];
 	check_args(argc, argv, name, n_file);
-	printf("Name player: %s\n", name);
+	printf("Nome del giocatore: %s\n", name);
 	//cartella corrente for tok
 
 	//Semaforo per la gestione degli accessi alla partita
@@ -189,7 +191,7 @@ int main(int argc, char** argv){
 	int sem_turn;
 
 	if (sem_access==-1){
-		perror("Seaphore not created by Server");
+		perror("Errore: Probabilmente il server non è attivo!");
 		exit(0);
 	}
 
@@ -197,7 +199,7 @@ int main(int argc, char** argv){
 	semop_siginterrupt(sem_access, &sops, 1);
 
 	//Message queue per l'iscrizione alla partita
-	printf("Access to the game...\n");
+	printf("Accesso alla partita...\n");
 	if((msg_id=msgget(ftok(cwd,2),0666)) == -1){
 		perror("Error call msgqueue");
 		exit(0);
@@ -221,6 +223,7 @@ int main(int argc, char** argv){
 	//lettura dei messaggi in queue
 	struct msg_info_game info_recive;
 	recive_message(msg_id, &info_recive, sizeof(struct msg_info_game), (long int)(getpid()), 0);
+
 	//print debug
 	/*
 	printf("Id shared memory: %i\n",info_recive.info.shared_memory);

@@ -92,7 +92,7 @@ struct select_cell{
 int msg_id=0;
 struct player p[PLAYERS];
 int sem_id_player[PLAYERS];
-int sem_id_end_player;
+int sem_id_end_player[PLAYERS];
 int sem_id_access;
 int shm_id_map;
 int counter_c = 0;
@@ -115,9 +115,9 @@ void signal_client_exit(int sig){
 			msg.info.status = 1;
 			send_message(msg_id, &msg, sizeof(struct msg_end_game), 0);
 			kill((pid_t)msg.msg_type, SIGUSR1);
+			semop_siginterrupt(sem_id_end_player[i], &sops, 1);
 		}
 	}
-	semop_siginterrupt(sem_id_end_player, &sops, 1);
 	clear_ipc();
 	exit(0);
 }
@@ -148,8 +148,10 @@ void signal_term_server(int sig){
 				}
 				kill(p[i].pid, SIGUSR1);
 			}
+			if(p[0].pid != 0 && p[1].pid!=0){ //eccezionale
+				semop_siginterrupt(sem_id_end_player[i], &sops, 1);
+			}
 		}
-		semop_siginterrupt(sem_id_end_player, &sops, 1);
 		clear_ipc();
 		exit(0);
 	}
@@ -200,14 +202,16 @@ int main(int argc, char **argv){
 	key_t key_sem_player1 = ftok (cwd, 3);
 	key_t key_sem_player2 = ftok (cwd, 4);
 	key_t key_sem_players = ftok(cwd,5);
-	key_t key_sem_end_player = ftok(cwd, 6);
+	key_t key_sem_end_player1 = ftok(cwd, 6);
+	key_t key_sem_end_player2 = ftok(cwd, 7);
 
 	sem_id_player[0] = semget(key_sem_player1, 3, IPC_CREAT | IPC_EXCL | 0666);
 	sem_id_player[1] = semget(key_sem_player2, 3, IPC_CREAT | IPC_EXCL | 0666); //semafori per singolo giocatore
 	sem_id_access = semget(key_sem_players, 2, IPC_CREAT | IPC_EXCL | 0666); //semaforo per la gestione di accesso alla partita e scambio di messaggi
 	shm_id_map = shmget(key_shm_map,sizeof(map),IPC_CREAT | IPC_EXCL | 0666); //shared memory il campo di gioco
 	msg_id = msgget(key_msg, IPC_CREAT | IPC_EXCL | 0666); //message queue
-	sem_id_end_player = semget(key_sem_end_player, 1, IPC_CREAT | IPC_EXCL | 0666);
+	sem_id_end_player[0] = semget(key_sem_end_player1, 1, IPC_CREAT | IPC_EXCL | 0666);
+	sem_id_end_player[1] = semget(key_sem_end_player2, 1, IPC_CREAT | IPC_EXCL | 0666);
 
 	//controllo errori nella creazione delle IPC
 	if (shm_id_map==-1 || msg_id==-1 || sem_id_player[0]==-1 || sem_id_player[1]==-1 || sem_id_access==-1){
@@ -231,11 +235,13 @@ int main(int argc, char **argv){
 	//printf("Players ready!\n");
 
 	//setto il valore del semaforo per la conferma terminazione dei client
-	arg_sem.array=NULL;
-	arg_sem.val = 2;
-	if(semctl(sem_id_end_player, 0, SETVAL, arg_sem)){
-		perror("Semctl error in SETVAL");
-		exit(0);
+	arg_sem.array = NULL;
+	arg_sem.val = 1;
+	for (int i = 0; i < PLAYERS ; i++ ){
+		if(semctl(sem_id_end_player[i], 0, SETVAL, arg_sem)){
+			perror("Semctl error in SETVAL");
+			exit(0);
+		}
 	}
 	int pid;
 	struct msg_registration msg_recive;
@@ -268,7 +274,7 @@ int main(int argc, char **argv){
 		msg_send.info.n_player=(i+1);
 		strcpy(msg_send.info.name_vs, p[1-i].name);
 		msg_send.info.symbol=symbols[i];
-		msg_send.info.sem_end = sem_id_end_player;
+		msg_send.info.sem_end = sem_id_end_player[i];
 		msg_send.msg_type=(long int)(p[i].pid);
 		send_message(msg_id, &msg_send, sizeof(struct info_game), 0);
 	}
@@ -355,7 +361,8 @@ int main(int argc, char **argv){
 	print_map(shm_map, dim_map[0], dim_map[1]);
 	sops.sem_num=0;
 	sops.sem_op=0;
-	semop_siginterrupt(sem_id_end_player, &sops, 1);
+	for(int i = 0; i < PLAYERS ; i++ )
+		semop_siginterrupt(sem_id_end_player[i], &sops, 1);
 	clear_ipc();
 	return 0;
 }
@@ -402,7 +409,8 @@ void clear_ipc(){
 	sem_remove(sem_id_player[0]);
 	sem_remove(sem_id_player[1]);
 	sem_remove(sem_id_access);
-	sem_remove(sem_id_end_player);
+	sem_remove(sem_id_end_player[0]);
+	sem_remove(sem_id_end_player[1]);
 	msg_queue_remove(msg_id);
 	exit(0);
 }
