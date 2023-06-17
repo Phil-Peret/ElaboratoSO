@@ -59,7 +59,7 @@ In questo caso abbiamo il problema opposto: le operazioni di input sono bloccant
 #include <signal.h>
 int siginterrupt(int sig, int flag);
 ```
-*** N.B Nelle ultime versioni di gcc, siginterrupt è indicato come deprecato ***
+***N.B Nelle ultime versioni di gcc, siginterrupt è indicato come deprecato***
 ## Prerequisiti
 È necessario il comando ```make``` per la compilazione del codice
 * ### Ubuntu
