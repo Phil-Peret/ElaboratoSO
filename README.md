@@ -39,13 +39,13 @@ Se questo avviene, il client al momento della registrazione nella message queue,
 ## Note
 * Se un client si trova in attesa di un altro gicatore non può terminare la propria esecuzione. Rimane comunque possibile terminare il server. 
 * Tutte le ```semop``` sono inserite all'interno di un do while per evitare l'uscita del processo dall'attesa:
-```
+```c
 do{
   ret = semop(sem_id, sops, n_ops);
 }while(ret == -1 && errno == EINTR);
 ```
 * Nella compilazione dei sorgenti con il comando ```make``` sono presenti alcuni warning (SA_RESTART fa parte di POSIX):
-``` 
+```
 warning: ‘siginterrupt’ is deprecated: Use sigaction with SA_RESTART instead [-Wdeprecated-declarations]
 ```
 ## Casi Particolari
@@ -55,8 +55,11 @@ Come citato in precedenza nel capitolo [Note](#note), il controllo viene effettu
 
 ### Gestione dei segnali durante l'attesa di input
 In questo caso abbiamo il problema opposto: le operazioni di input sono bloccanti e non possono esseere interrotte di default. In caso di arrivo di un segnale, quest'ultime vengono riprese immediatamente dopo l'handler del segnale. In caso sia necessario sospendere questa operazione al momento dell'arrivo di un segnale è possibile utilizzare siginterrupt. In tal modo, i segnali desiderati hanno la capacità di sospendere le syscall e bloccare la loro esecuzione.
-
-
+```c
+#include <signal.h>
+int siginterrupt(int sig, int flag);
+```
+*** N.B Nelle ultime versioni di gcc, siginterrupt è indicato come deprecato ***
 ## Prerequisiti
 È necessario il comando ```make``` per la compilazione del codice
 * ### Ubuntu
