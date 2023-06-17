@@ -1,3 +1,9 @@
+<!---VISIT MY REPO: https://github.com/Phil-Peret/ElaboratoSO-->
+<!---VISIT MY REPO: https://github.com/Phil-Peret/ElaboratoSO-->
+<!---VISIT MY REPO: https://github.com/Phil-Peret/ElaboratoSO-->
+<!---VISIT MY REPO: https://github.com/Phil-Peret/ElaboratoSO-->
+<!---VISIT MY REPO: https://github.com/Phil-Peret/ElaboratoSO-->
+
 # Forza4 - Sistemi operativi
 Implementazione del gioco "Forza4" in modalità Client/Server tra processi.
 
