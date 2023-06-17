@@ -27,7 +27,6 @@ void shm_remove(int);
 void sem_remove(int);
 void msg_queue_remove(int);
 int message_in_queue(int);
-void pprint();
 char get_value_by_position(char*, int, int, int, int);
 int check_map_game(char*, int);
 int check_winner(int, int, int, char *);

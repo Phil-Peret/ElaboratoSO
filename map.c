@@ -1,9 +1,9 @@
 #include "map.h"
 
 void clean_map(char *campo, int height, int width){ //pulizia campo
-    for(int i=0; i<(height*width); i++){
-        campo[i]= ' ';
-    }
+	for(int i=0; i<(height*width); i++){
+		campo[i]= ' ';
+	}
 }
 
 void insert_getton_on_map(char map[], int width, int height, int pos, char symbol){
@@ -23,13 +23,13 @@ void print_map(char map[],int width,int height){
 	}
 	printf("\n");
 
-    for (int i=0; i<height; i++){
+	for (int i=0; i<height; i++){
 	printf("| ");
 		for(int j=0; j<width; j++){
-	    		printf("%c | ",map[(i*width)+j]);
+				printf("%c | ",map[(i*width)+j]);
 		}
 	printf("\n");
-    }
+	}
 }
 
 char get_value_by_position(char* map, int width, int height, int y, int x){
