@@ -1,3 +1,8 @@
+/************************************
+*VR421770
+*Filippo Peretti
+*15/06/2023
+*************************************/
 #include "message_queue.h"
 
 void send_message(int msg_id, const void *msg, size_t msg_size, int flag){

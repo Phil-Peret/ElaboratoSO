@@ -1,3 +1,9 @@
+/************************************
+*VR421770
+*Filippo Peretti
+*15/06/2023
+*************************************/
+
 #include "map.h"
 
 void clean_map(char *campo, int height, int width){ //pulizia campo
