@@ -40,9 +40,18 @@ struct info_game{
 	int height;
 	int semaphore;
 	int shared_memory;
-	char name_vs[16]; //nome avversario
 	pid_t pid_server;
 	int sem_end;
+};
+
+struct name_op{
+	char name[16];
+	char symbol;
+};
+
+struct msg_name_op{
+	long int msg_type;
+	struct name_op op;
 };
 
 struct player{
@@ -109,13 +118,13 @@ void signal_client_exit(int sig){
 	}
 	for (int i=0; i<PLAYERS; i++){
 		if (msg.info.status == (long int)(p[i].pid)){
+			kill((pid_t)msg.msg_type, SIGUSR1);
 			printf("%s ha lasciato la partita\n", p[i].name);
-			msg.msg_type = i == 0 ? (long int)(p[1].pid) : (long int)(p[0].pid);
+			msg.msg_type =(long int)(p[1-i].pid);
 			msg.info.winner = 1;
 			msg.info.status = 1;
 			send_message(msg_id, &msg, sizeof(struct msg_end_game), 0);
-			kill((pid_t)msg.msg_type, SIGUSR1);
-			semop_siginterrupt(sem_id_end_player[i], &sops, 1);
+			semop_siginterrupt(sem_id_end_player[1-i], &sops, 1);
 		}
 	}
 	clear_ipc();
@@ -132,23 +141,32 @@ void signal_term_server(int sig){
 		alarm(5);
 	}
 	else if(sig == SIGINT && counter_c != 0){
-		if(child_pid!=0){
-			kill(child_pid, SIGTERM);
+		if(p[0].pid == 0 || p[1].pid == 0){
+			for (int i=0; i<PLAYERS; i++){
+				if(p[i].pid != 0){
+					struct msg_name_op msg;
+					msg.msg_type = (long int)(p[i].pid);
+					msg.op.name[0]=' ';
+					msg.op.symbol = -1;
+					send_message(msg_id, &msg, sizeof(struct msg_end_game), 0);
+					semop_siginterrupt(sem_id_end_player[i], &sops, 1);
+				}
+			}
 		}
-		printf("Server shutdown...\n");
-		//mando ai client l'avviso di terminazione del server
-		for (int i=0; i<PLAYERS; i++){
-			if(p[i].pid!=0){
+		else{
+			if(child_pid!=0){
+				kill(child_pid, SIGTERM);
+			}
+			printf("Server shutdown...\n");
+			//mando ai client l'avviso di terminazione del server
+			for (int i=0; i<PLAYERS; i++){
+				kill(p[i].pid, SIGUSR1);
 				struct msg_end_game msg;
-				msg.msg_type=p[i].pid;
+				msg.msg_type = (long int)(p[i].pid);
+				printf("mando messaggio a %i\n", p[i].pid);
 				msg.info.winner = -1;
 				msg.info.status = 1;
-				if(msgsnd(msg_id, &msg, sizeof(struct msg_end_game), 0)){
-					perror("Error send message on queue");
-				}
-				kill(p[i].pid, SIGUSR1);
-			}
-			if(p[0].pid != 0 && p[1].pid!=0){ //eccezionale
+				send_message(msg_id, &msg, sizeof(struct msg_end_game), 0);
 				semop_siginterrupt(sem_id_end_player[i], &sops, 1);
 			}
 		}
@@ -165,6 +183,7 @@ void signal_term_server(int sig){
 int main(int argc, char **argv){
 	p[0].pid=0;
 	p[1].pid=0;
+	pid_t server_pid = getpid();
 	//handler signal
 	if (signal(SIGUSR2, signal_client_exit) == (void*)-1){
 		perror("Error setting signal");
@@ -215,15 +234,15 @@ int main(int argc, char **argv){
 
 	//controllo errori nella creazione delle IPC
 	if (shm_id_map==-1 || msg_id==-1 || sem_id_player[0]==-1 || sem_id_player[1]==-1 || sem_id_access==-1){
-		perror("Not possible start another server!\n");
+		perror("Non è possibile inizializzare un nuovo server!\n");
 		exit(0);
 	}
 
-	unsigned short value[]={2,1};
+	unsigned short value[]={2};
 	arg_sem.array=value;
 
 	//inizializzazione semafori per l'accesso
-	if(semctl(sem_id_access,3,SETALL,arg_sem)){	//semnum è ignorato
+	if(semctl(sem_id_access,0,SETALL,arg_sem)){	//semnum è ignorato
 		perror("Semctl error, in SETALL");
 		exit(0);
 	}
@@ -243,40 +262,45 @@ int main(int argc, char **argv){
 			exit(0);
 		}
 	}
-	int pid;
-	struct msg_registration msg_recive;
-	//lettura del messaggio da parte dei client per la registrazione alla partita su msgqueue
+
+	//lettura del messaggio da parte dei client per la registrazione alla partita su msgqueue e risposta
 	for (int i=0; i<PLAYERS; i++){
+		struct msg_registration msg_recive;
 		recive_message(msg_id, &msg_recive, sizeof(msg_recive), 1, 0);
 		p[i].pid=msg_recive.info.pid;
 		strcpy(p[i].name, msg_recive.info.name);
-		printf("Giocatore %s connsesso -> symbol %c \n", p[i].name, symbols[i]);
-		if(msg_recive.info.vs_cpu == 1 && i==0){
+		printf("Giocatore %s connesso -> symbol %c \n", p[i].name, symbols[i]);
+		if(msg_recive.info.vs_cpu == 1 && i == 0){
 			printf("CPU Player creato!\n");
-			pid=fork();
-			if(pid==0){
-				execl(strcat(cwd, "/F4ClientAuto.o"),"CPU", (char*)NULL);
+			if(fork() == 0){
+				sigset_t signal_set;
+				sigemptyset(&signal_set);
+				sigaddset(&signal_set, SIGINT);
+				sigprocmask(SIG_BLOCK, &signal_set, NULL);
+				execl(strcat(cwd, "/F4ClientAuto.o"),"CPU\0", (char*)NULL);
 				exit(0);
 			}
 		}
+		//risposta del server
+		struct msg_info_game msg_send;
+		msg_send.msg_type=(long int)(p[i].pid);
+		msg_send.info.n_player = (i+1);
+		msg_send.info.symbol = symbols[i];
+		msg_send.info.width = dim_map[0];
+		msg_send.info.height = dim_map[1];
+		msg_send.info.semaphore=(int)(sem_id_player[i]);
+		msg_send.info.pid_server = server_pid;
+		msg_send.info.shared_memory = shm_id_map;
+		msg_send.info.sem_end = sem_id_end_player[i];
+		send_message(msg_id, &msg_send, sizeof(struct msg_info_game), 0);
 	}
 
-
-	//risposta del server ai client su msgqueue
-	struct msg_info_game msg_send;
-	msg_send.info.pid_server=getpid();
-	msg_send.info.width = dim_map[0];
-	msg_send.info.height = dim_map[1];
-	msg_send.info.shared_memory = shm_id_map;
-
-	for(int i=0; i<PLAYERS; i++){//risposta per ogni client
-		msg_send.info.semaphore=(int)(sem_id_player[i]);
-		msg_send.info.n_player=(i+1);
-		strcpy(msg_send.info.name_vs, p[1-i].name);
-		msg_send.info.symbol=symbols[i];
-		msg_send.info.sem_end = sem_id_end_player[i];
-		msg_send.msg_type=(long int)(p[i].pid);
-		send_message(msg_id, &msg_send, sizeof(struct info_game), 0);
+	for (int j=0; j < PLAYERS; j++){ //aggiunta
+		struct msg_name_op msg_send;
+		msg_send.msg_type = p[j].pid;
+		strcpy(msg_send.op.name, p[1-j].name);
+		msg_send.op.symbol = symbols[1-j];
+		msgsnd(msg_id, &msg_send, sizeof(struct msg_name_op), 0);
 	}
 
 	//Attach della memorie condivise
@@ -285,20 +309,13 @@ int main(int argc, char **argv){
 		perror("Shared memory attach!");
 		exit(0);
 	}
-
 	clean_map(shm_map, dim_map[0], dim_map[1]); //Set /space in ogni posizione
-	//set semaphore operation
-	sops.sem_flg=0;
-	sops.sem_op=-1;
-	sops.sem_num=1;
-	semop_siginterrupt(sem_id_access, &sops, 1);
 
 	while(check_map_game(shm_map, dim_map[0])){
 		//Inizio turno giocatore 1
-		pid_t server_pid = getpid();
 		struct sembuf start_turn[2] = {{0,1,0},{1,1,0}};
-		semop_siginterrupt(sem_id_player[0], start_turn, 2);
 		struct sembuf end_turn[2] = {{0,0,0},{1,0,0}};
+		semop_siginterrupt(sem_id_player[0], start_turn, 2);
 		struct sembuf confirm_move = {2,1,0}; //conferma inserimento mossa nella memoria condivisa
 		child_pid=fork();
 		if(child_pid==0){
@@ -314,11 +331,12 @@ int main(int argc, char **argv){
 			send_message(msg_id, &sel, sizeof(struct select_cell), 0); //sblocco padre in attesa di messaggio
 			exit(0);
 		}
+
 		//attesa messaggio da player1
 		struct select_cell sel;
 		recive_message(msg_id, &sel, sizeof(struct select_cell), (long int)(getpid()), 0);
 		if(sel.data.move!=-1){
-			insert_getton_on_map(shm_map, dim_map[0], dim_map[1], sel.data.move , symbols[0]);
+			insert_getton_on_map(shm_map, dim_map[0], dim_map[1], sel.data.move, symbols[0]);
 			semop_siginterrupt(sem_id_player[0], &confirm_move, 1);
 		}
 		//Fine turno giocatore 1
@@ -386,8 +404,8 @@ int check_winner(int player_turn, int width, int height, char* symbols){
 	}
 	else if (check){
 		struct msg_end_game msg;
+		printf("%s ha vinto la partita\n", p[player_turn].name);
 		for (int i=0; i<PLAYERS; i++){
-			printf("%s ha vinto la partita\n", p[player_turn].name);
 			msg.msg_type = (long int)p[i].pid;
 			msg.info.winner = i == player_turn ? 1 : 0;
 			msg.info.status = 0;
@@ -493,10 +511,6 @@ void msg_queue_remove(int msg_id){
 	perror("Error remove msgqueue");
 	exit(0);
 	}
-}
-
-void pprint(){
-	printf("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢴⣶⣶⣿⣿⣿⣆\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡀⣀⣠⣴⣾⣮⣝⠿⠿⠿⣻⡟\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣶⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠁⠉⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠟⠉⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⣿⣿⣿⣿⣿⣿⣿⣛⣛⣻⠉⠁⠀⠀⠀⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢿⣿⣿⣿⣿⣿⡿⣿⣿⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀\n⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠻⠿⠟⠋⠑⠛⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n");
 }
 
 void print_guide(){
