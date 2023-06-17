@@ -18,7 +18,8 @@ void insert_getton_on_map(char map[], int width, int height, int pos, char symbo
 
 void print_map(char map[],int width,int height){
 	for(int i = 0; i<height; i++){
-		printf("  %i ",i);
+		if(i < 10) printf("  %i ",i);
+		else printf(" %i ",i);
 	}
 	printf("\n");
 
