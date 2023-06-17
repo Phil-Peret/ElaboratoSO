@@ -6,6 +6,7 @@ Implementazione del gioco "Forza4" in modalità Client/Server tra processi.
 * [Informazioni generali](#informazioni-generali)
 * [Scelte progettuali](#scelte-progettuali)
 * [Note](#note)
+* [Casi Particolari](#casi-particolari)
 * [Prerequisiti](#prerequisiti)
 * [Tips&Tricks](#tips&triks)
 
@@ -47,6 +48,14 @@ do{
 ``` 
 warning: ‘siginterrupt’ is deprecated: Use sigaction with SA_RESTART instead [-Wdeprecated-declarations]
 ```
+## Casi Particolari
+### Gestione dei segnali durante syscall
+In SVr4 alcune syscall possono essere interrotte dall'arrivo di segnali, come ad esempio le semop e le msgrcv/msgsnd. Per evitare che queste chiamate vengano interrotte, è necessario effettuare un controllo al termine della loro esecuzione, controllando la variabile errno.
+Come citato in precedenza nel capitolo [Note](#note), il controllo viene effettuato nel ciclo do-while in modo tale da ripetere l'esecizione.
+
+### Gestione dei segnali durante l'attesa di input
+In questo caso abbiamo il problema opposto: le operazioni di input sono bloccanti e non possono esseere interrotte di default. In caso di arrivo di un segnale, quest'ultime vengono riprese immediatamente dopo l'handler del segnale. In caso sia necessario sospendere questa operazione al momento dell'arrivo di un segnale è possibile utilizzare siginterrupt. In tal modo, i segnali desiderati hanno la capacità di sospendere le syscall e bloccare la loro esecuzione.
+
 
 ## Prerequisiti
 È necessario il comando ```make``` per la compilazione del codice
