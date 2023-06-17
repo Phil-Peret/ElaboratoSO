@@ -19,7 +19,7 @@ void recive_message(int msg_id, void *msg_rec, size_t msg_size, long int type, i
 	}while(ret==-1 && errno==EINTR);
 
 	if(ret==-1){
-		perror("Error in revive message");
+		perror("Error in recive message");
 		exit(-1);
 	}
 }
