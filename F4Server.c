@@ -38,7 +38,9 @@ int check_map_game(char*, int);
 int check_winner(int, int, int, char *);
 void clear_ipc();
 
-struct info_game{
+
+struct msg_info_game{
+	long int msg_type;
 	int n_player;
 	char symbol;
 	int width;
@@ -49,56 +51,35 @@ struct info_game{
 	int sem_end;
 };
 
-struct name_op{
+struct msg_name_op{
+	long int msg_type;
 	char name[16];
 	char symbol;
 };
 
-struct msg_name_op{
+struct msg_end_game{
 	long int msg_type;
-	struct name_op op;
-};
-
-struct player{
-	pid_t pid;
-	char name[16];
-};
-
-struct msg_info_game{
-	long int msg_type;
-	struct info_game info;
-
-};
-
-struct end_game{
 	int winner;
 	long int status;
 };
 
-struct msg_end_game{
+
+struct msg_registration{
 	long int msg_type;
-	struct end_game info;
-};
-
-
-struct registration{
 	pid_t pid;
 	char name[16];  //nome giocatore
 	int vs_cpu;
 };
 
-struct msg_registration{
+struct select_cell{
 	long int msg_type;
-	struct registration info;
-};
-
-struct data_select_cell{
 	int move;
 };
 
-struct select_cell{
-	long int msg_type;
-	struct data_select_cell data;
+
+struct player{
+	pid_t pid;
+	char name[16];
 };
 
 //variabili globali
@@ -116,19 +97,20 @@ char *shm_map;
 
 void signal_client_exit(int sig){
 	kill(child_pid, SIGTERM);
+	waitpid(child_pid,NULL,0);
 	struct sembuf sops={0,0,0}; //attesa 0
 	struct msg_end_game msg;
-	if(msgrcv(msg_id, &msg, sizeof(struct msg_end_game), (long int)(getpid()), 0) == -1){
+	if(msgrcv(msg_id, &msg, sizeof(struct msg_end_game) - sizeof(long int), (long int)(getpid()), 0) == -1){
 		perror("Error get message in message queue\n");
 	}
 	for (int i=0; i<PLAYERS; i++){
-		if (msg.info.status == (long int)(p[i].pid)){
-			kill((pid_t)msg.msg_type, SIGUSR1);
+		if (msg.status == (long int)(p[i].pid)){
 			printf("%s ha lasciato la partita\n", p[i].name);
 			msg.msg_type =(long int)(p[1-i].pid);
-			msg.info.winner = 1;
-			msg.info.status = 1;
-			send_message(msg_id, &msg, sizeof(struct msg_end_game), 0);
+			kill((pid_t)msg.msg_type, SIGUSR1);
+			msg.winner = 1;
+			msg.status = 1;
+			send_message(msg_id, &msg, sizeof(struct msg_end_game) - sizeof(long int), 0);
 			semop_siginterrupt(sem_id_end_player[1-i], &sops, 1);
 		}
 	}
@@ -151,9 +133,9 @@ void signal_term_server(int sig){
 				if(p[i].pid != 0){
 					struct msg_name_op msg;
 					msg.msg_type = (long int)(p[i].pid);
-					msg.op.name[0]=' ';
-					msg.op.symbol = -1;
-					send_message(msg_id, &msg, sizeof(struct msg_end_game), 0);
+					msg.name[0]=' ';
+					msg.symbol = -1;
+					send_message(msg_id, &msg, sizeof(struct msg_name_op) - sizeof(long int), 0);
 					semop_siginterrupt(sem_id_end_player[i], &sops, 1);
 				}
 			}
@@ -169,9 +151,9 @@ void signal_term_server(int sig){
 				struct msg_end_game msg;
 				msg.msg_type = (long int)(p[i].pid);
 				printf("mando messaggio a %i\n", p[i].pid);
-				msg.info.winner = -1;
-				msg.info.status = 1;
-				send_message(msg_id, &msg, sizeof(struct msg_end_game), 0);
+				msg.winner = -1;
+				msg.status = 1;
+				send_message(msg_id, &msg, sizeof(struct msg_end_game) - sizeof(long int), 0);
 				semop_siginterrupt(sem_id_end_player[i], &sops, 1);
 			}
 		}
@@ -271,11 +253,11 @@ int main(int argc, char **argv){
 	//lettura del messaggio da parte dei client per la registrazione alla partita su msgqueue e risposta
 	for (int i=0; i<PLAYERS; i++){
 		struct msg_registration msg_recive;
-		recive_message(msg_id, &msg_recive, sizeof(msg_recive), 1, 0);
-		p[i].pid=msg_recive.info.pid;
-		strcpy(p[i].name, msg_recive.info.name);
+		recive_message(msg_id, &msg_recive, sizeof(struct msg_registration) - sizeof(long int), 1, 0);
+		p[i].pid=msg_recive.pid;
+		strcpy(p[i].name, msg_recive.name);
 		printf("Giocatore %s connesso -> symbol %c \n", p[i].name, symbols[i]);
-		if(msg_recive.info.vs_cpu == 1 && i == 0){
+		if(msg_recive.vs_cpu == 1 && i == 0){
 			printf("CPU Player creato!\n");
 			if(fork() == 0){
 				sigset_t signal_set;
@@ -289,23 +271,23 @@ int main(int argc, char **argv){
 		//risposta del server
 		struct msg_info_game msg_send;
 		msg_send.msg_type=(long int)(p[i].pid);
-		msg_send.info.n_player = (i+1);
-		msg_send.info.symbol = symbols[i];
-		msg_send.info.width = dim_map[0];
-		msg_send.info.height = dim_map[1];
-		msg_send.info.semaphore=(int)(sem_id_player[i]);
-		msg_send.info.pid_server = server_pid;
-		msg_send.info.shared_memory = shm_id_map;
-		msg_send.info.sem_end = sem_id_end_player[i];
-		send_message(msg_id, &msg_send, sizeof(struct msg_info_game), 0);
+		msg_send.n_player = (i+1);
+		msg_send.symbol = symbols[i];
+		msg_send.width = dim_map[0];
+		msg_send.height = dim_map[1];
+		msg_send.semaphore=(int)(sem_id_player[i]);
+		msg_send.pid_server = server_pid;
+		msg_send.shared_memory = shm_id_map;
+		msg_send.sem_end = sem_id_end_player[i];
+		send_message(msg_id, &msg_send, sizeof(struct msg_info_game) - sizeof(long int), 0);
 	}
 
 	for (int j=0; j < PLAYERS; j++){ //aggiunta
 		struct msg_name_op msg_send;
 		msg_send.msg_type = p[j].pid;
-		strcpy(msg_send.op.name, p[1-j].name);
-		msg_send.op.symbol = symbols[1-j];
-		msgsnd(msg_id, &msg_send, sizeof(struct msg_name_op), 0);
+		strcpy(msg_send.name, p[1-j].name);
+		msg_send.symbol = symbols[1-j];
+		msgsnd(msg_id, &msg_send, sizeof(struct msg_name_op) - sizeof(long int), 0);
 	}
 
 	//Attach della memorie condivise
@@ -331,23 +313,23 @@ int main(int argc, char **argv){
 			sleep(TIMEOUT);
 			kill(p[0].pid, SIGUSR2);
 			struct select_cell sel;
-			sel.data.move=-1;
+			sel.move=-1;
 			sel.msg_type = (long int)server_pid;
-			send_message(msg_id, &sel, sizeof(struct select_cell), 0); //sblocco padre in attesa di messaggio
+			send_message(msg_id, &sel, sizeof(struct select_cell) - sizeof(long int), 0); //sblocco padre in attesa di messaggio
 			exit(0);
 		}
 
 		//attesa messaggio da player1
 		struct select_cell sel;
-		recive_message(msg_id, &sel, sizeof(struct select_cell), (long int)(getpid()), 0);
-		if(sel.data.move!=-1){
-			insert_getton_on_map(shm_map, dim_map[0], dim_map[1], sel.data.move, symbols[0]);
+		recive_message(msg_id, &sel, sizeof(struct select_cell) - sizeof(long int), (long int)(getpid()), 0);
+		if(sel.move!=-1){
+			insert_getton_on_map(shm_map, dim_map[0], dim_map[1], sel.move, symbols[0]);
 			semop_siginterrupt(sem_id_player[0], &confirm_move, 1);
 		}
 		//Fine turno giocatore 1
 		semop_siginterrupt(sem_id_player[0], end_turn, 2);
 		kill(child_pid, SIGTERM);
-
+		waitpid(child_pid,NULL,0);
 		if(check_winner(0, dim_map[0], dim_map[1], symbols)){ //se c'è un vincitore
 			break;
 		}
@@ -364,19 +346,20 @@ int main(int argc, char **argv){
 			sleep(TIMEOUT);
 			kill(p[1].pid, SIGUSR2);
 			struct select_cell sel;
-			sel.data.move=-1;
+			sel.move=-1;
 			sel.msg_type = (long int)server_pid;
-			send_message(msg_id, &sel, sizeof(struct select_cell), 0); //sblocco padre in attesa di messaggio
+			send_message(msg_id, &sel, sizeof(struct select_cell) - sizeof(long int), 0); //sblocco padre in attesa di messaggio
 			exit(0);
 		}
-		recive_message(msg_id, &sel, sizeof(struct select_cell), (long int)(getpid()), 0);
-		if(sel.data.move!=-1){
-			insert_getton_on_map(shm_map, dim_map[0], dim_map[1], sel.data.move , symbols[1]);
+		recive_message(msg_id, &sel, sizeof(struct select_cell) - sizeof(long int), (long int)(getpid()), 0);
+		if(sel.move!=-1){
+			insert_getton_on_map(shm_map, dim_map[0], dim_map[1], sel.move , symbols[1]);
 			semop_siginterrupt(sem_id_player[1], &confirm_move, 1);
 		}
 		//Fine turno giocatore 2
 		semop_siginterrupt(sem_id_player[1], end_turn, 2);
 		kill(child_pid, SIGTERM);
+		waitpid(child_pid,NULL,0);
 		if(check_winner(1, dim_map[0], dim_map[1], symbols)){ //se c'è un vincitore
 			break;
 		}
@@ -397,12 +380,9 @@ int check_winner(int player_turn, int width, int height, char* symbols){
 			struct msg_end_game msg;
 			for (int i=0; i<PLAYERS; i++){
 				msg.msg_type = (long int)p[i].pid;
-				msg.info.winner = -1;
-				msg.info.status = 0;
-				if(msgsnd(msg_id, &msg, sizeof(msg), 0)==-1){
-					perror("Error send message on Server");
-					exit(0);
-				}
+				msg.winner = -1;
+				msg.status = 0;
+				send_message(msg_id, &msg, sizeof(struct msg_end_game) - sizeof(long int), 0);
 				kill(p[i].pid, SIGUSR1);
 			}
 			return 1;
@@ -412,12 +392,9 @@ int check_winner(int player_turn, int width, int height, char* symbols){
 		printf("%s ha vinto la partita\n", p[player_turn].name);
 		for (int i=0; i<PLAYERS; i++){
 			msg.msg_type = (long int)p[i].pid;
-			msg.info.winner = i == player_turn ? 1 : 0;
-			msg.info.status = 0;
-			if(msgsnd(msg_id, &msg, sizeof(msg), 0)==-1){
-				perror("Error send message on Server");
-				exit(0);
-			}
+			msg.winner = i == player_turn ? 1 : 0;
+			msg.status = 0;
+			send_message(msg_id, &msg, sizeof(struct msg_end_game) - sizeof(long int), 0);
 			kill(p[i].pid, SIGUSR1);
 		}
 		return 1;

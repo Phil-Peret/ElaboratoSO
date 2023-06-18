@@ -37,7 +37,8 @@ char *shm_map = NULL;
 int dim_map[2];
 
 
-struct info_game{
+struct msg_info_game{
+	long int msg_type;
 	int n_player;
 	char symbol;
 	int width;
@@ -48,50 +49,29 @@ struct info_game{
 	int sem_end;
 };
 
-struct msg_info_game{
+struct msg_name_op{
 	long int msg_type;
-	struct info_game info;
-
-};
-
-struct name_op{
 	char name[16];
 	char symbol;
 };
 
-struct msg_name_op{
+struct msg_end_game{
 	long int msg_type;
-	struct name_op op;
-};
-
-struct end_game{
 	int winner;
 	long int status;
 };
 
-struct msg_end_game{
-	long int msg_type;
-	struct end_game info;
-};
 
-struct registration{
+struct msg_registration{
+	long int msg_type;
 	pid_t pid;
 	char name[16];  //nome giocatore
 	int vs_cpu;
 };
 
-struct msg_registration{
-	long int msg_type;
-	struct registration info;
-};
-
-struct data_select_cell{
-	int move;
-};
-
 struct select_cell{
 	long int msg_type;
-	struct data_select_cell data;
+	int move;
 };
 
 
@@ -100,20 +80,20 @@ void sig_handler_end(int sig){
 	printf("SIGUSR1 recive\n");
 	struct msg_end_game msg;
 	printf("mypid %i\n",(getpid()));
-	recive_message(msg_id, &msg,  sizeof(struct msg_end_game), (long int)(getpid()), 0);
+	recive_message(msg_id, &msg,  sizeof(struct msg_end_game) - sizeof(long int), (long int)(getpid()), 0);
 	print_map(shm_map, dim_map[0], dim_map[1]);
-	if (msg.info.winner == -1){
+	if (msg.winner == -1){
 		printf("Tie!\n");
-		if(msg.info.status == 1){
+		if(msg.status == 1){
 			yellow();
 			printf("Il server è stato terminato \n");
 			reset_color();
 		}
-		else if(msg.info.status == 0){
+		else if(msg.status == 0){
 			printf("Map is full!\n");
 		}
 	}
-	else if (msg.info.winner == 0){
+	else if (msg.winner == 0){
 		red();
 		printf("Hai perso la partita!\n");
 		reset_color();
@@ -122,7 +102,7 @@ void sig_handler_end(int sig){
 		green();
 		printf("Hai vinto la partita!\n");
 		reset_color();
-		if(msg.info.status==1){
+		if(msg.status==1){
 			printf("L'avversario si è ritirato dalla partita!\n");
 		}
 	}
@@ -148,11 +128,9 @@ void sig_handler_exit(int sig){
 	if(a == 's' || a == 'S'){
 		struct msg_end_game msg;
 		msg.msg_type=(long int)server_pid;
-		msg.info.winner=0;
-		msg.info.status=(long int)getpid();
-		if(msgsnd(msg_id, &msg, sizeof(struct msg_end_game), 0) == -1){
-			perror("Error send message \n");
-		}
+		msg.winner=0;
+		msg.status=(long int)getpid();
+		send_message(msg_id, &msg, sizeof(struct msg_end_game) - sizeof(long int), 0);
 		if(shmdt(shm_map) == -1){ //detach memoria condivisa
 			perror("Error in detach shm");
 		}
@@ -227,22 +205,22 @@ int main(int argc, char** argv){
 	//il processo manda il proprio pid al server
 	struct msg_registration msg_reg;
 	msg_reg.msg_type=1;
-	msg_reg.info.pid=getpid();
-	msg_reg.info.vs_cpu = argc == (n_file + 2) ? 1 : 0;
-	strcpy(msg_reg.info.name, name);
-	send_message(msg_id, &msg_reg, sizeof(struct msg_registration), 0);
+	msg_reg.pid=getpid();
+	msg_reg.vs_cpu = argc == (n_file + 2) ? 1 : 0;
+	strcpy(msg_reg.name, name);
+	send_message(msg_id, &msg_reg, sizeof(struct msg_registration) - sizeof(long int), 0);
 
 	//lettura dei messaggi in queue
 	struct msg_info_game info_recive;
-	recive_message(msg_id, &info_recive, sizeof(struct msg_info_game), (long int)(getpid()), 0);
+	recive_message(msg_id, &info_recive, sizeof(struct msg_info_game) - sizeof(long int), (long int)(getpid()), 0);
 
-	printf("Il tuo simbolo è %c, attendi il tuo turno...\n", info_recive.info.symbol);
-	sem_turn = info_recive.info.semaphore;
-	shm_id = info_recive.info.shared_memory;
-	dim_map[0] = info_recive.info.width;
-	dim_map[1] = info_recive.info.height;
-	server_pid = info_recive.info.pid_server;
-	sem_end = info_recive.info.sem_end;
+	printf("Il tuo simbolo è %c, attendi il tuo turno...\n", info_recive.symbol);
+	sem_turn = info_recive.semaphore;
+	shm_id = info_recive.shared_memory;
+	dim_map[0] = info_recive.width;
+	dim_map[1] = info_recive.height;
+	server_pid = info_recive.pid_server;
+	sem_end = info_recive.sem_end;
 
 	//carico la memoria condivisa
 	shm_map = shmat(shm_id, NULL, 0666);
@@ -252,8 +230,8 @@ int main(int argc, char** argv){
 	}
 	//attesa informazioni del server sull'avversario'
 	struct msg_name_op msg_rcv;
-	recive_message(msg_id, &msg_rcv, sizeof(struct msg_name_op), (long int)(getpid()), 0);
-	if(msg_rcv.op.name[0]==' ' && msg_rcv.op.symbol == -1){
+	recive_message(msg_id, &msg_rcv, sizeof(struct msg_name_op) - sizeof(long int), (long int)(getpid()), 0);
+	if(msg_rcv.name[0]==' ' && msg_rcv.symbol == -1){
 		printf("Il server è stato terminato\n");
 		if(shmdt(shm_map) == -1){ //detach memoria condivisa
 			perror("Error in detach shm");
@@ -261,7 +239,7 @@ int main(int argc, char** argv){
 		semop_siginterrupt(sem_end, &sops, 1);
 		exit(0);
 	}
-	printf("Il nome dell'avversario è %s  con il simbolo %c, buona fortuna!\n", msg_rcv.op.name, msg_rcv.op.symbol);
+	printf("Il nome dell'avversario è %s  con il simbolo %c, buona fortuna!\n", msg_rcv.name, msg_rcv.symbol);
 	//adesso è possibile uscire dalla partita
 	if (signal(SIGINT, sig_handler_exit) == (void*)-1){
 		perror("Error setting signal");
@@ -300,8 +278,8 @@ int main(int argc, char** argv){
 			struct sembuf wait_confirm = {2,-1,0};
 			struct select_cell sel;
 			sel.msg_type = (long int)server_pid;
-			sel.data.move = pos;
-			send_message(msg_id, &sel, sizeof(struct select_cell), 0);
+			sel.move = pos;
+			send_message(msg_id, &sel, sizeof(struct select_cell) - sizeof(long int), 0);
 			semop_siginterrupt(sem_turn, &wait_confirm,1);
 			print_map(shm_map,dim_map[0],dim_map[1]);
 			printf("\n--------------------------------\n");
@@ -381,6 +359,7 @@ void fdrain(FILE *const in){ //apro stdin come file
 int check_choose(char* choose, char map[], int width){
 	int len = strlen(choose)-1;
 	if(choose[len] != '\n') return -1; //se l'ultimo carattere non è \n allora ritorna -1
+	if(choose[0] == '\n') return -1; //se non ha inserito una scelta
 	for (int i=0; i<len ; i++){
 		if(!isdigit(choose[i])) return -1;
 	}
@@ -389,6 +368,9 @@ int check_choose(char* choose, char map[], int width){
 		if(map[pos] != ' '){
 			return -1;
 		}
+	}
+	else{
+		return -1;
 	}
 	return pos; //ritorna la posizione in int
 }

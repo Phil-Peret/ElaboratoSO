@@ -23,15 +23,15 @@ void insert_getton_on_map(char map[], int width, int height, int pos, char symbo
 }
 
 void print_map(char map[],int width,int height){
-	for(int i = 0; i<height; i++){
+	for(int i = 0; i < width; i++){
 		if(i < 10) printf("  %i ",i);
 		else printf(" %i ",i);
 	}
 	printf("\n");
 
-	for (int i=0; i<height; i++){
+	for (int i = 0; i < height; i++){
 	printf("| ");
-		for(int j=0; j<width; j++){
+		for(int j=0; j < width; j++){
 				printf("%c | ",map[(i*width)+j]);
 		}
 	printf("\n");

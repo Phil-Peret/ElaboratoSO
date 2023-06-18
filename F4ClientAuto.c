@@ -37,8 +37,8 @@ int timeout = 0;
 char *shm_map = NULL;
 int dim_map[2];
 
-
-struct info_game{
+struct msg_info_game{
+	long int msg_type;
 	int n_player;
 	char symbol;
 	int width;
@@ -49,60 +49,38 @@ struct info_game{
 	int sem_end;
 };
 
-struct msg_info_game{
+struct msg_name_op{
 	long int msg_type;
-	struct info_game info;
-
-};
-
-struct name_op{
 	char name[16];
 	char symbol;
 };
 
-struct msg_name_op{
+struct msg_end_game{
 	long int msg_type;
-	struct name_op op;
-};
-
-struct end_game{
 	int winner;
 	long int status;
 };
 
-struct msg_end_game{
-	long int msg_type;
-	struct end_game info;
-};
 
-struct registration{
+struct msg_registration{
+	long int msg_type;
 	pid_t pid;
 	char name[16];  //nome giocatore
 	int vs_cpu;
 };
 
-struct msg_registration{
+struct select_cell{
 	long int msg_type;
-	struct registration info;
-};
-
-struct data_select_cell{
 	int move;
 };
 
-struct select_cell{
-	long int msg_type;
-	struct data_select_cell data;
-};
 
 
 void sig_handler_end(int sig){
 	struct sembuf sops = {0,-1,0};
 	printf("SIGUSR1 recive\n");
 	struct msg_end_game msg;
-	if(msgrcv(msg_id, &msg,  sizeof(struct msg_end_game), (long int)(getpid()), 0) == -1){
-		perror("Error read message in a queue");
-	}
+	recive_message(msg_id, &msg,  sizeof(struct msg_end_game) - sizeof(long int), (long int)(getpid()), 0);
 	if(shmdt(shm_map) == -1){ //detach memoria condivisa
 		perror("Error in detach shm");
 	}
@@ -153,22 +131,22 @@ int main(int argc, char** argv){
 	//il processo manda il proprio pid al server
 	struct msg_registration msg_reg;
 	msg_reg.msg_type=1;
-	msg_reg.info.pid=getpid();
-	msg_reg.info.vs_cpu = argc == (n_file + 2) ? 1 : 0;
-	strcpy(msg_reg.info.name, name);
-	send_message(msg_id, &msg_reg, sizeof(struct msg_registration), 0);
+	msg_reg.pid=getpid();
+	msg_reg.vs_cpu = argc == (n_file + 2) ? 1 : 0;
+	strcpy(msg_reg.name, name);
+	send_message(msg_id, &msg_reg, sizeof(struct msg_registration) - sizeof(long int), 0);
 
 	//lettura dei messaggi in queue
 	struct msg_info_game info_recive;
-	recive_message(msg_id, &info_recive, sizeof(struct msg_info_game), (long int)(getpid()), 0);
+	recive_message(msg_id, &info_recive, sizeof(struct msg_info_game) - sizeof(long int), (long int)(getpid()), 0);
 
-	printf("Il tuo simbolo è %c, attendi il tuo turno...\n", info_recive.info.symbol);
-	sem_turn = info_recive.info.semaphore;
-	shm_id = info_recive.info.shared_memory;
-	dim_map[0] = info_recive.info.width;
-	dim_map[1] = info_recive.info.height;
-	server_pid = info_recive.info.pid_server;
-	sem_end = info_recive.info.sem_end;
+	printf("Il tuo simbolo è %c, attendi il tuo turno...\n", info_recive.symbol);
+	sem_turn = info_recive.semaphore;
+	shm_id = info_recive.shared_memory;
+	dim_map[0] = info_recive.width;
+	dim_map[1] = info_recive.height;
+	server_pid = info_recive.pid_server;
+	sem_end = info_recive.sem_end;
 
 	//carico la memoria condivisa
 	shm_map = shmat(shm_id, NULL, 0666);
@@ -178,8 +156,8 @@ int main(int argc, char** argv){
 	}
 	//attesa informazioni del server sull'avversario'
 	struct msg_name_op msg_rcv;
-	recive_message(msg_id, &msg_rcv, sizeof(struct msg_name_op), (long int)(getpid()), 0);
-	printf("Il nome dell'avversario è %s  con il simbolo %c, buona fortuna!\n", msg_rcv.op.name, msg_rcv.op.symbol);
+	recive_message(msg_id, &msg_rcv, sizeof(struct msg_name_op) - sizeof(long int), (long int)(getpid()), 0);
+	printf("Il nome dell'avversario è %s  con il simbolo %c, buona fortuna!\n", msg_rcv.name, msg_rcv.symbol);
 
 
 	while(1){ //cambiare con for in base alla dimensione del campo(?)
@@ -194,8 +172,8 @@ int main(int argc, char** argv){
 		int pos = valid_pos[rand()%len_array];
 		struct select_cell sel;
 		sel.msg_type = (long int)server_pid;
-		sel.data.move = pos;
-		send_message(msg_id, &sel, sizeof(struct select_cell), 0);
+		sel.move = pos;
+		send_message(msg_id, &sel, sizeof(struct select_cell) - sizeof(long int), 0);
 		struct sembuf wait_confirm = {2,-1,0};
 		semop_siginterrupt(sem_turn, &wait_confirm,1);
 		sops.sem_num=1;
