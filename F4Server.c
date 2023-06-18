@@ -144,6 +144,7 @@ void signal_term_server(int sig){
 			if(child_pid!=0){
 				kill(child_pid, SIGTERM);
 			}
+			waitpid(child_pid,NULL,0);
 			printf("Server shutdown...\n");
 			//mando ai client l'avviso di terminazione del server
 			for (int i=0; i<PLAYERS; i++){
