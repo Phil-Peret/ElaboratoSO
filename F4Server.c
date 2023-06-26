@@ -266,7 +266,7 @@ int main(int argc, char **argv){
 				sigaddset(&signal_set, SIGINT);
 				sigprocmask(SIG_BLOCK, &signal_set, NULL);
 				execl(strcat(cwd, "/F4ClientAuto.o"),"CPU\0", (char*)NULL);
-				perror("Erorr in exexl");
+				perror("Erorr in execl");
 				exit(0);
 			}
 		}

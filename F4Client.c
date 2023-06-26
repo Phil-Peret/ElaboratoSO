@@ -280,10 +280,10 @@ int main(int argc, char** argv){
 			sel.msg_type = (long int)server_pid;
 			sel.move = pos;
 			send_message(msg_id, &sel, sizeof(struct select_cell) - sizeof(long int), 0);
+			//semaforo per la conferma dell'inserimento della mossa
 			semop_siginterrupt(sem_turn, &wait_confirm,1);
 			print_map(shm_map,dim_map[0],dim_map[1]);
 			printf("\n--------------------------------\n");
-			//semaforo per la conferma dell'inserimento della mossa
 		}
 		sops.sem_num=1;
 		//non necessario con msgqueue
