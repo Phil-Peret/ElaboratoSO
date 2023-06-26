@@ -90,6 +90,7 @@ int sem_id_player[PLAYERS];
 int sem_id_end_player[PLAYERS];
 int sem_id_access;
 int shm_id_map;
+pid_t auto_client = 0;
 int counter_c = 0;
 pid_t child_pid = 0;
 char *shm_map;
@@ -113,6 +114,9 @@ void signal_client_exit(int sig){
 			send_message(msg_id, &msg, sizeof(struct msg_end_game) - sizeof(long int), 0);
 			semop_siginterrupt(sem_id_end_player[1-i], &sops, 1);
 		}
+	}
+	if(auto_client != 0){
+		waitpid(auto_client, NULL, 0);
 	}
 	clear_ipc();
 	exit(0);
@@ -157,6 +161,9 @@ void signal_term_server(int sig){
 				send_message(msg_id, &msg, sizeof(struct msg_end_game) - sizeof(long int), 0);
 				semop_siginterrupt(sem_id_end_player[i], &sops, 1);
 			}
+		}
+		if(auto_client != 0){
+			waitpid(auto_client, NULL, 0);
 		}
 		clear_ipc();
 		exit(0);
@@ -260,7 +267,7 @@ int main(int argc, char **argv){
 		printf("Giocatore %s connesso -> symbol %c \n", p[i].name, symbols[i]);
 		if(msg_recive.vs_cpu == 1 && i == 0){
 			printf("CPU Player creato!\n");
-			if(fork() == 0){
+			if((auto_client = fork()) == 0){
 				sigset_t signal_set;
 				sigemptyset(&signal_set);
 				sigaddset(&signal_set, SIGINT);
