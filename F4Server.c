@@ -214,7 +214,7 @@ int main(int argc, char **argv){
 
 	sem_id_player[0] = semget(key_sem_player1, 3, IPC_CREAT | IPC_EXCL | 0666);
 	sem_id_player[1] = semget(key_sem_player2, 3, IPC_CREAT | IPC_EXCL | 0666); //semafori per singolo giocatore
-	sem_id_access = semget(key_sem_players, 2, IPC_CREAT | IPC_EXCL | 0666); //semaforo per la gestione di accesso alla partita e scambio di messaggi
+	sem_id_access = semget(key_sem_players, 1, IPC_CREAT | IPC_EXCL | 0666); //semaforo per la gestione di accesso alla partita e scambio di messaggi
 	shm_id_map = shmget(key_shm_map,sizeof(map),IPC_CREAT | IPC_EXCL | 0666); //shared memory il campo di gioco
 	msg_id = msgget(key_msg, IPC_CREAT | IPC_EXCL | 0666); //message queue
 	sem_id_end_player[0] = semget(key_sem_end_player1, 1, IPC_CREAT | IPC_EXCL | 0666);
@@ -266,6 +266,7 @@ int main(int argc, char **argv){
 				sigaddset(&signal_set, SIGINT);
 				sigprocmask(SIG_BLOCK, &signal_set, NULL);
 				execl(strcat(cwd, "/F4ClientAuto.o"),"CPU\0", (char*)NULL);
+				perror("Erorr in exexl");
 				exit(0);
 			}
 		}
@@ -283,7 +284,7 @@ int main(int argc, char **argv){
 		send_message(msg_id, &msg_send, sizeof(struct msg_info_game) - sizeof(long int), 0);
 	}
 
-	for (int j=0; j < PLAYERS; j++){ //aggiunta
+	for (int j=0; j < PLAYERS; j++){ //informazioni avversario
 		struct msg_name_op msg_send;
 		msg_send.msg_type = p[j].pid;
 		strcpy(msg_send.name, p[1-j].name);
@@ -297,6 +298,7 @@ int main(int argc, char **argv){
 		perror("Shared memory attach!");
 		exit(0);
 	}
+
 	clean_map(shm_map, dim_map[0], dim_map[1]); //Set /space in ogni posizione
 
 	while(check_map_game(shm_map, dim_map[0])){
@@ -305,7 +307,7 @@ int main(int argc, char **argv){
 		struct sembuf end_turn[2] = {{0,0,0},{1,0,0}};
 		semop_siginterrupt(sem_id_player[0], start_turn, 2);
 		struct sembuf confirm_move = {2,1,0}; //conferma inserimento mossa nella memoria condivisa
-		child_pid=fork();
+		child_pid = fork();
 		if(child_pid==0){
 			sigset_t signal_set;
 			sigemptyset(&signal_set);
